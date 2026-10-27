@@ -1,0 +1,1 @@
+SKIPPED: tests/ui.cjs refused to replace existing draft or administrator configuration. Timestamp verification passed in tests/sync-workbook-browser.cjs instead.

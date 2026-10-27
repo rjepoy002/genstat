@@ -1,0 +1,25 @@
+<?php
+declare(strict_types=1);
+require __DIR__.'/../lib/template-sync.php';require __DIR__.'/../lib/template-refresh.php';
+$root=sys_get_temp_dir().'/genstat-auto-'.bin2hex(random_bytes(6));mkdir($root);mkdir($root.'/storage');mkdir($root.'/config');
+copy(__DIR__.'/../genstat.xlsx',$root.'/genstat.xlsx');copy(__DIR__.'/../config/inputs.php',$root.'/config/inputs.php');
+$base=build_layout($root.'/genstat.xlsx',$root.'/config/inputs.php');atomic_file_write($root.'/config/layout.json',json_bytes($base));
+function check(bool $ok,string $message):void{if(!$ok)throw new RuntimeException('FAIL: '.$message);echo 'PASS: '.$message.PHP_EOL;}
+function update_excel(callable $callback):void{global $root;$z=zip_read($root.'/genstat.xlsx');$doc=xml_doc(zip_text($z,'xl/worksheets/sheet1.xml'));$callback($doc,xml_path($doc));atomic_file_write($root.'/genstat.xlsx',zip_write($z,['xl/worksheets/sheet1.xml'=>$doc->saveXML()]));
+ if(is_file($root.'/storage/template-auto.json')){$c=json_decode(file_get_contents($root.'/storage/template-auto.json'),true);$c['checkedAt']=0;atomic_file_write($root.'/storage/template-auto.json',json_bytes($c));}}
+try{
+ auto_template_layout($root,$base);$cacheHash=hash_file('sha256',$root.'/storage/template-auto.json');auto_template_layout($root,$base);check($cacheHash===hash_file('sha256',$root.'/storage/template-auto.json'),'Unchanged requests reuse cached metadata');
+ $draft=json_bytes(['period'=>'2026-06','templateHash'=>$base['sha256'],'revision'=>1,'values'=>['B11'=>'123.456'],'formulas'=>[]]);atomic_file_write($root.'/storage/draft-2026-06.json',$draft);
+ update_excel(fn($d,$x)=>$x->query('//s:c[@r="C11"]/s:v')->item(0)->nodeValue='1000.12');$l=auto_template_layout($root,$base);check($l['sheets'][0]['cells']['C11']['value']==='1000.12'&&$GLOBALS['templateRefresh']['changes']['values'],'Value changes refresh automatically');check($GLOBALS['templateRefresh']['strategy']==='values-only','Value-only path reuses geometry without full layout extraction');check(file_get_contents($root.'/storage/draft-2026-06.json')===$draft,'Draft bytes and revision preserved');check(file_get_contents($root.'/config/layout.json')===json_bytes($base),'Value changes do not rebuild baseline layout');
+ update_excel(fn($d,$x)=>$x->query('//s:c[@r="Q11"]/s:f')->item(0)->nodeValue='ROUND(B11/3,2)');$l=auto_template_layout($root,$base);check($l['sheets'][0]['cells']['Q11']['formula']==='ROUND(B11/3,2)'&&$l['sheets'][0]['cells']['Q11']['formulaProtected'],'Valid changed formula metadata refreshed and locked');
+ update_excel(fn($d,$x)=>$x->query('//s:c[@r="Q11"]/s:f')->item(0)->nodeValue='IF(1,2,Q11)');$fallback=auto_template_layout($root,$base);check($GLOBALS['templateRefresh']['state']==='conflict'&&$fallback['sha256']===$l['sha256'],'Hidden-branch circular dependency blocked with last verified view');
+ update_excel(fn($d,$x)=>$x->query('//s:c[@r="Q11"]/s:f')->item(0)->nodeValue='ROUND(B11/3,2)');auto_template_layout($root,$base);
+ update_excel(fn($d,$x)=>$x->query('//s:cols/s:col')->item(0)->setAttribute('width','19'));$l=auto_template_layout($root,$base);check($GLOBALS['templateRefresh']['state']==='ready'&&$l['sheets'][0]['columns'][0]['width']==='19','Compatible column geometry refreshes automatically');
+ update_excel(fn($d,$x)=>$x->query('//s:c[@r="B11"]')->item(0)->setAttribute('s','0'));$l=auto_template_layout($root,$base);check($GLOBALS['templateRefresh']['changes']['formatting']&&$l['sheets'][0]['cells']['B11']['style']===0,'Formatting changes update original style metadata');
+ update_excel(fn($d,$x)=>$x->query('//s:mergeCell')->item(0)->setAttribute('ref','A1:B2'));$fallback=auto_template_layout($root,$base);check($GLOBALS['templateRefresh']['state']==='ready','Unmapped heading merge changes synchronize automatically');$l=$fallback;
+ update_excel(function($d,$x)use($base){$x->query('//s:mergeCell')->item(0)->setAttribute('ref',$base['sheets'][0]['merges'][0]);$x->query('//s:c[@r="B11"]/s:v')->item(0)->nodeValue='555';});$fallback=auto_template_layout($root,$base);check($GLOBALS['templateRefresh']['state']==='conflict'&&str_contains($GLOBALS['templateRefresh']['message'],'Both Excel'),'Concurrent Excel and web value changes require review without remapping drafts');
+ atomic_file_write($root.'/genstat.xlsx','incomplete');$fallback=auto_template_layout($root,$base);check($fallback['sha256']===$l['sha256']&&$GLOBALS['templateRefresh']['state']==='error','Incomplete workbook safely retains verified view');
+ check(file_get_contents($root.'/storage/draft-2026-06.json')===$draft,'All rejected updates preserve exact draft bytes');check(count(glob($root.'/storage/backups/auto-*/draft-2026-06.json'))>=3,'Drafts backed up before compatible metadata updates');
+}finally{
+ $it=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST);foreach($it as $entry){if($entry->isDir())rmdir($entry->getPathname());else unlink($entry->getPathname());}rmdir($root);
+}
