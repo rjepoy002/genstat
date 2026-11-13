@@ -38,8 +38,24 @@ function storage_refresh(string $root,array $baseline): void {
  $incoming=$files[0];$cache=$root.'/storage/template-auto.json';$prior=is_file($cache)?file_get_contents($cache):null;
  try {
   if(!preg_match('/^GENSTAT[_ ]2026(?:\(\d+\))?\.xlsx$/i',basename($incoming)))throw new RuntimeException('Incoming filename must identify GENSTAT year 2026.');
-  $oldHash=hash_file('sha256',$active);$backup=workbook_backup($root,$active,'before-refresh');
-  workbook_validate($incoming);$hash=hash_file('sha256',$incoming);
+  $oldHash=hash_file('sha256',$active);
+  $incomingZip=workbook_validate($incoming);$hash=hash_file('sha256',$incoming);
+  require_once __DIR__.'/monthly-worksheets.php';
+  $activeZip=workbook_validate($active);$activeNames=[];$incomingNames=[];
+  foreach(xml_path(xml_doc(zip_text($activeZip,'xl/workbook.xml')))->query('//s:sheets/s:sheet') as $sheet)$activeNames[]=$sheet->getAttribute('name');
+  foreach(xml_path(xml_doc(zip_text($incomingZip,'xl/workbook.xml')))->query('//s:sheets/s:sheet') as $sheet)$incomingNames[]=$sheet->getAttribute('name');
+  $removed=array_values(array_diff($activeNames,$incomingNames));
+  if($removed&&count(array_filter($removed,fn($name)=>monthly_sheet_period($name)!==null))===count($removed)){
+   // A missing month is a generation request to assess, not permission to
+   // delete the active sheet or fabricate a blank/copy of another month's data.
+   $review=missing_monthly_review($root,build_layout($active,$root.'/config/inputs.php'),build_layout($incoming,$root.'/config/inputs.php'));
+   $GLOBALS['monthlyWorksheetReview']=$review;
+   $messages=array_column($review['months'],'message');
+   $GLOBALS['incomingWarning']=implode(' ',$messages).' Complete multi-source worksheet mappings are unavailable. Existing worksheets and drafts are retained; the incoming workbook remains pending.';
+   if($review['conflicts'])$GLOBALS['incomingWarning'].=' Conflict: saved edits or dependent formulas require reconciliation and confirmation before any regeneration can be applied.';
+   return;
+  }
+  $backup=workbook_backup($root,$active,'before-refresh');
   $next=auto_template_layout($root,$baseline,true,$incoming);
   if(($GLOBALS['templateRefresh']['state']??'')!=='ready'||$next['sha256']!==$hash)throw new RuntimeException($GLOBALS['templateRefresh']['message']??'Unsafe structural migration.');
   if(hash_file('sha256',$active)!==$oldHash||hash_file('sha256',$incoming)!==$hash)throw new RuntimeException('Workbook changed during validation. Retry after Excel finishes saving.');

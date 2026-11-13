@@ -23,3 +23,8 @@
 .reference-highlights{position:absolute;inset:0;pointer-events:none;z-index:2;overflow:hidden}.reference-highlight{position:absolute;border:2px solid var(--reference-color);background:color-mix(in srgb,var(--reference-color) 9%,transparent);box-sizing:border-box;pointer-events:none}.cell.formula-selected{outline:2px solid #628278;outline-offset:-2px;z-index:3}.formula-reference-note{flex:0 1 auto;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:#627585;background:#eef3f7;padding:4px 6px;border-radius:4px}.formula-reference-note[hidden]{display:none}.formula-bar .formula-label{border-left:0;padding-left:0}@media(max-width:600px){.formula-reference-note{max-width:90px;font-size:9px}.formula-bar .formula-label{display:block}}
 
 .cell.pending-change{outline:2px dashed #c78920;outline-offset:-2px}.cell.pending-change::before{content:"fx ?"}.input-preview{white-space:inherit}#formula-undo:disabled{opacity:.35}
+
+.history-actions{display:inline-flex;align-items:center;gap:2px;flex:0 0 auto}.history-actions .icon-button{font-size:20px}.history-actions .icon-button:disabled{opacity:.35}
+
+/* Frozen headings share the worksheet scale and cover all cell/highlight layers. */
+.worksheet-header-layer{position:absolute;left:0;top:0;background:#f0f2f1;isolation:isolate;will-change:transform}#column-headings{z-index:20}#row-headings{z-index:21}#sheet-corner{left:0;top:0;z-index:22;will-change:transform}

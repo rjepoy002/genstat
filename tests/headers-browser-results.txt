@@ -1,0 +1,7 @@
+PASS: desktop Jun26 - vertical/horizontal/diagonal/end scrolling at 50/70/100/150%, Ctrl+wheel, header/cell alignment, geometry and overlay stacking
+PASS: desktop Jan26 - vertical/horizontal/diagonal/end scrolling at 50/70/100/150%, Ctrl+wheel, header/cell alignment, geometry and overlay stacking
+PASS: desktop RecovBill26 - vertical/horizontal/diagonal/end scrolling at 50/70/100/150%, Ctrl+wheel, header/cell alignment, geometry and overlay stacking
+PASS: mobile Jun26 - vertical/horizontal/diagonal/end scrolling at 50/70/100/150%, Ctrl+wheel, header/cell alignment, geometry and overlay stacking
+PASS: mobile Jan26 - vertical/horizontal/diagonal/end scrolling at 50/70/100/150%, Ctrl+wheel, header/cell alignment, geometry and overlay stacking
+PASS: mobile RecovBill26 - vertical/horizontal/diagonal/end scrolling at 50/70/100/150%, Ctrl+wheel, header/cell alignment, geometry and overlay stacking
+PASS: 128 geometry/stacking checks; no duplicate headers, JavaScript errors or POST requests; workbook and drafts byte-for-byte unchanged

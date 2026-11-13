@@ -9,12 +9,12 @@ function formula_grant_key(string $ref): string {
 function formula_auth_status(): array {
     return ['mode'=>'cell-confirmation','unlocked'=>false];
 }
-function confirm_formula_cell(string $ref): array {
+function confirm_formula_cell(string $ref,bool $history=false): array {
     $cell=worksheet_cell(report_sheet(),$ref);
     if (!$cell) throw new InvalidArgumentException('Select a formula cell.');
     if (!($cell['formulaProtected'] ?? false)) {
         $draft=read_draft(period($_GET['period']??'2026-06'));
-        if (!str_starts_with($draft['formulas'][$ref]??'','=')) throw new InvalidArgumentException('Select a formula cell.');
+        if (!str_starts_with($draft['formulas'][$ref]??'','=') && !($history&&$cell['editable'])) throw new InvalidArgumentException('Select a formula cell.');
     }
     if (($cell['readOnly']??false) || (report_sheet()['readOnly']??false) || !in_array($cell['formulaKind']??'ordinary',['ordinary','shared'],true)) {
         throw new InvalidArgumentException('This formula belongs to a read-only or array/data-table range.');

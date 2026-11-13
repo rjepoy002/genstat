@@ -34,7 +34,7 @@ function template_guard(): void {
  if($lock===null){$lock=fopen(ROOT.'/storage/template.lock','c');if(!$lock||!flock($lock,LOCK_EX))throw new RuntimeException('Cannot acquire worksheet lock.');}
  if(is_file(ROOT.'/storage/refresh-in-progress.json'))throw new RuntimeException('An earlier template transaction was interrupted. Restore its recorded backup before retrying synchronization. Drafts remain protected.');
 }
-function layout(bool $force=false): array {template_guard();static $l=null;if($l!==null)return $l;$baseline=json_decode(file_get_contents(ROOT.'/config/layout.json'),true,512,JSON_THROW_ON_ERROR);storage_refresh(ROOT,$baseline);$l=current_layout($baseline,$force);if(isset($GLOBALS['incomingWarning']))$GLOBALS['templateRefresh']=['state'=>'warning','message'=>$GLOBALS['incomingWarning']]+$GLOBALS['templateRefresh'];return $l;}
+function layout(bool $force=false): array {template_guard();static $l=null;if($l!==null)return $l;$baseline=json_decode(file_get_contents(ROOT.'/config/layout.json'),true,512,JSON_THROW_ON_ERROR);storage_refresh(ROOT,$baseline);$l=current_layout($baseline,$force);if(isset($GLOBALS['incomingWarning']))$GLOBALS['templateRefresh']=['state'=>'warning','message'=>$GLOBALS['incomingWarning']]+$GLOBALS['templateRefresh'];if(isset($GLOBALS['monthlyWorksheetReview']))$GLOBALS['templateRefresh']['monthlyWorksheets']=$GLOBALS['monthlyWorksheetReview'];return $l;}
 function assert_template(): void {
  layout();if(!in_array($GLOBALS['templateRefresh']['state']??'ready',['ready','warning'],true))throw new RuntimeException($GLOBALS['templateRefresh']['message']);
  if(!hash_equals(layout()['sha256'],hash_file('sha256',workbook_path(ROOT))))throw new RuntimeException('Excel template changed while processing this request. Reload before saving.');
@@ -100,6 +100,7 @@ function synchronize_draft(string $p): array {
 
  $active=workbook_path(ROOT);$expected=layout()['sha256'];$bytes=export_workbook($values,$formulas);
  $tmp=$active.'.'.bin2hex(random_bytes(6)).'.xlsx';$draftFile=draft_path($p);$draftRaw=file_get_contents($draftFile);$cacheFile=ROOT.'/storage/template-auto.json';$cacheRaw=is_file($cacheFile)?file_get_contents($cacheFile):null;
+ $syncFile=ROOT.'/storage/workbook-sync.json';$syncRaw=is_file($syncFile)?file_get_contents($syncFile):null;
  $published=false;
  try {
   atomic_file_write($tmp,$bytes);workbook_validate($tmp);
@@ -116,9 +117,11 @@ function synchronize_draft(string $p): array {
   $baseline=json_decode(file_get_contents(ROOT.'/config/layout.json'),true,512,JSON_THROW_ON_ERROR);
   $status=['state'=>'ready','message'=>'Browser entries synchronized to Excel.','workbook'=>'genstat_2026.xlsx','syncedAt'=>gmdate('c'),'changes'=>[]];
   atomic_file_write($cacheFile,json_bytes(['baseline'=>$baseline['sha256'],'layout'=>$next,'status'=>$status,'checkedAt'=>time(),'observedHash'=>$next['sha256']]));
+  atomic_file_write($syncFile,json_bytes(['sha256'=>$next['sha256'],'synchronizedAt'=>$draft['synchronizedAt'],'backup'=>basename($backup)]));
+  if(hash_file('sha256',$active)!==$next['sha256'])throw new DomainException('Conflict: Excel changed while synchronization completed.');
   return ['message'=>$status['message'],'hash'=>$next['sha256'],'backup'=>basename($backup)];
  }catch(Throwable $e){
-  if($published){atomic_file_write($active,file_get_contents($backup));atomic_file_write($draftFile,$draftRaw);if($cacheRaw!==null)atomic_file_write($cacheFile,$cacheRaw);elseif(is_file($cacheFile))unlink($cacheFile);}
+  if($published){$external=hash_file('sha256',$active)!==hash('sha256',$bytes);if(!$external)atomic_file_write($active,file_get_contents($backup));atomic_file_write($draftFile,$draftRaw);if($cacheRaw!==null)atomic_file_write($cacheFile,$cacheRaw);elseif(is_file($cacheFile))unlink($cacheFile);if($syncRaw!==null)atomic_file_write($syncFile,$syncRaw);elseif(is_file($syncFile))unlink($syncFile);if($external)throw new DomainException('Conflict: a newer Excel workbook was preserved. The original draft was restored and backups retained.',0,$e);}
   throw $e;
  }finally{if(is_file($tmp))unlink($tmp);}
 }

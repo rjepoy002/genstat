@@ -1,3 +1,5 @@
+Current recovery controls: see [UNDO-RESYNC.md](UNDO-RESYNC.md). Undo/Redo covers ordinary and formula edits and survives autosave. Resync confirms before discarding the selected draft and reloads Excel without writing draft values into it.
+
 # Cell editing fix
 
 ## Root cause
@@ -11,7 +13,7 @@ All non-formula cells in the displayed used range now accept text, numbers and s
 Formula detection reads actual OOXML formula nodes and shared/array ranges, independent of cached displayed results. A double-click, editing key, formula-bar editing attempt or toolbar action displays:
 
 - **Formula Protected**
-- “This cell contains a formula. Editing it may affect other calculations. Do you wish to unlock and edit this cell?”
+- ï¿½This cell contains a formula. Editing it may affect other calculations. Do you wish to unlock and edit this cell?ï¿½
 - **Cancel** / **Unlock & Edit**
 
 Confirmation grants editing only for that worksheet, workbook version and cell. The original expression appears in the formula editor. Enter or leaving the editor stages the change and restores protection; Escape cancels the buffer. A dashed outline marks pending changes, and the Undo button or Ctrl+Z cancels them before saving. Save Draft validates with the existing bounded formula engine. An explicit replacement by text, number or blank is supported and is never inferred from a formula's calculated result. Confirmations are checked by the server and consumed after saving. There is no administrator/password requirement in the application editing flow.

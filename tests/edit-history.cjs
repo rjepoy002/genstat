@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('assert'),History=require('../assets/edit-history.js');
+const h=new History(50);
+for(let i=0;i<60;i++)h.record({ref:'A1',before:{value:i},after:{value:i+1}});
+assert.equal(h.past.length,50);assert.equal(h.past[0].before.value,10);
+for(let i=0;i<50;i++){assert(h.peek('undo'));h.commit('undo');}assert.equal(h.peek('undo'),undefined);assert.equal(h.future.length,50);
+for(let i=0;i<50;i++)h.commit('redo');assert.equal(h.peek('redo'),undefined);assert.equal(h.past.length,50);
+h.commit('undo');h.record({ref:'B2',before:{value:''},after:{value:'new'}});assert.equal(h.future.length,0);assert.equal(h.past.length,50);
+const count=h.past.length;h.record({ref:'B2',before:{value:'same'},after:{value:'same'}});assert.equal(h.past.length,count);
+h.clear();assert.equal(h.past.length+h.future.length,0);
+console.log('PASS: 50-edit bound, undo/redo ordering, branch invalidation, no-op edits and session reset');
