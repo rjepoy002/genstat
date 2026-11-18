@@ -10,6 +10,7 @@ const fs=require('fs'),path=require('path');
  page.on('pageerror',e=>errors.push(e.message));
  try{
   await page.goto(fixtureUrl);
+  await page.locator('#total-group-toggle').click();
   for(const [endpoint,action,error] of [
    ['base-report.php','unlock','Invalid session token.'],
    ['query-settings-api.php','metadata','Session expired. Reload the report.'],
@@ -45,7 +46,20 @@ const fs=require('fs'),path=require('path');
   const {hash,month}=await page.evaluate(()=>window.genstatReport.snapshot());
   const candidate=path.resolve(`storage/base-report-${hash}-${month}.json`);
   if(fs.existsSync(candidate))throw Error('Existing base draft: refusing persistence test writes.');
-  testDraft=candidate;await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#status').textContent==='Draft saved');
+  let releaseSave;
+  const savingRequest=new Promise(resolve=>{releaseSave=resolve;});
+  await page.route('**/base-report.php',async route=>{
+   if(route.request().method()==='POST'&&route.request().postDataJSON().action==='save')await savingRequest;
+   await route.continue();
+  });
+  testDraft=candidate;await page.locator('#save').click();
+  assert.equal(await page.locator('#status').textContent(),'Saving draft…');
+  assert(await page.locator('#save').isDisabled());
+  assert(await page.locator('#save .save-spinner').isVisible());
+  assert(!fs.existsSync(candidate));
+  releaseSave();
+  await page.waitForFunction(()=>document.querySelector('#status').textContent==='Draft saved');
+  assert(await page.locator('#save').isEnabled());
   await page.reload();assert.equal(await page.locator('[data-ref="Q11"] .value').textContent(),'42,854,346.90');
   const stale=await page.evaluate(async()=>{const d=JSON.parse(document.querySelector('#report-data').textContent);const r=await fetch('base-report.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...d,revision:0,action:'save'})});return r.status;});assert.equal(stale,400);
   const saved=JSON.parse(fs.readFileSync(testDraft,'utf8'));assert.equal(saved.revision,1);assert.equal(saved.values.B11,'24850752.84');fs.unlinkSync(testDraft);fs.unlinkSync(testDraft+'.lock');testDraft=null;

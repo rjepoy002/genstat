@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if(PHP_SAPI!=='cli')exit;
 require_once __DIR__.'/../lib/files.php';
+require_once __DIR__.'/../lib/query-settings.php';
 $root=dirname(__DIR__);$dest=$root.'/config/query-settings.local.php';
 if(is_file($dest)){echo "Already configured; no accounts or tables changed.\n";exit;}
 $c=(require $root.'/config/monthly-source.php')['connection'];mysqli_report(MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT);
@@ -10,7 +11,7 @@ $schema=$c['database'];if(!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/D',$schema))thr
 $tables=['genstat_query_definitions','genstat_row_query_mappings','genstat_query_history','genstat_query_apply_operations'];
 $existing=array_column($db->query('SHOW TABLES')->fetch_all(MYSQLI_NUM),0);
 if(array_intersect($tables,$existing))throw new RuntimeException('Query tables already exist. Inspect and configure them manually; refusing duplicate/partial setup.');
-$approved=['area_master','area_mapping','overallsalessummary','billadjustment','kwh_diff_allocation','billhistorycancelled','billhistorycancelled_2'];
+$approved=QS_REPORTING_TABLES;
 if(array_diff($approved,$existing))throw new RuntimeException('Required reporting tables are missing.');
 foreach(['genstat_report_reader','genstat_settings_writer'] as $user){$s=$db->prepare('SELECT COUNT(*) FROM mysql.user WHERE User=?');$s->bind_param('s',$user);$s->execute();if((int)$s->get_result()->fetch_row()[0])throw new RuntimeException('An application account already exists; refusing to change its grants.');}
 foreach(explode(';',file_get_contents($root.'/migrations/001-query-settings.sql')) as $sql)if(trim($sql))$db->query($sql);

@@ -14,7 +14,7 @@ foreach($ids as $i=>$id){$ref=col_name($i+2).'18';$bindings[$ref]=['areaId'=>(st
 $config=qs_normalize($l,['rowKey'=>$key,'queryKey'=>'READONLY_BP_FIXTURE','sql'=>'SELECT :ReportMonth','areaColumn'=>'AreaID','valueColumn'=>'TotalKWhSold','bindings'=>$bindings,'excluded'=>[],'enabled'=>true]);
 $result=['columns'=>['AreaID','TotalKWhSold'],'rows'=>array_reverse($results),'truncated'=>false];$matched=qs_match($l,$config,$result,$area['areas'],$area['areaMappings']);
 bp_check(!$matched['errors']&&count($matched['changes'])===15&&$matched['changes']['F18']['formulaReplacement'],'Approved row accepts all 15 areas including the source F18 formula');
-$review=qs_review_target($l,$matched['changes']['F18'],base_report_calculate($l),[],[],[]);bp_check($review['existingFormula']==='=3011664+767072'&&$review['currentDisplay']==='3,778,736.00'&&$review['proposedDisplay']==='3,776,446.00'&&$review['differenceDisplay']==='-2,290.00','Review shows existing formula and exact current/proposed/difference');
+bp_check($matched['changes']['F18']['originalFormula']==='=3011664+767072'&&$matched['changes']['F18']['value']==='3776446.00','SQL mapping retains F18 formula provenance and the computed value');
 bp_check(!$config['excluded'],'AreaID 12 is never automatically excluded');
 try{$bad=$config;$bad['bindings']['B15']=['areaId'=>'12','sacode'=>''];qs_normalize($l,$bad);throw new RuntimeException('Unauthorized target accepted');}catch(QuerySettingsError $e){bp_check(str_contains($e->getMessage(),'outside the selected authorized'),'Formula outside the approved input row remains rejected');}
 // In-memory alternate template only: verify the requested 15-input behavior

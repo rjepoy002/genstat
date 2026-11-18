@@ -15,7 +15,7 @@ function base_report_read_draft(array $layout): array {
   $path=__DIR__.'/../storage/base-report-'.$layout['sha256'].'.json';
  $draft=is_file($path)?json_decode(file_get_contents($path),true,512,JSON_THROW_ON_ERROR):['values'=>[],'formulas'=>[],'revision'=>0];
  if(isset($draft['reportMonth'])&&$draft['reportMonth']!==base_report_month($layout))throw new RuntimeException('The saved draft belongs to a different reporting month.');
- $draft['sqlReplacements']??=[];return $draft;
+ $draft['sqlReplacements']??=[];$draft['sqlSources']??=[];return $draft;
 }
 
 // Independent source/draft namespace: annual synchronization never writes this template.

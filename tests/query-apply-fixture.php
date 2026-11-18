@@ -22,6 +22,16 @@ $state=json_decode(file_get_contents($root.'/fixture-state.json'),true,512,JSON_
  $unchanged=fixture_production_hash($db,$c['database'])===$state['productionHash'];$db->query("DROP USER IF EXISTS '$user'@'127.0.0.1'");$db->query("DROP DATABASE IF EXISTS `$schema`");if(!$unchanged)throw new RuntimeException('Production settings changed during the test; fixture did not write them.');echo "Isolated schema/account removed; production configurations/history/receipts unchanged.\n";exit;
 }
 $db->select_db($schema);
+if($action==='adjustment-export'){
+ require $root.'/lib/workbook-storage.php';
+ $zip=workbook_validate($root.'/adjustment-export.xlsx');
+ $xml=xml_path(xml_doc(zip_text($zip,'xl/worksheets/sheet1.xml')));
+ if($xml->evaluate('string(//s:c[@r="B25"]/s:v)')!=='910'
+   ||$xml->evaluate('count(//s:c[@r="B25"]/s:f)')!==0.0
+   ||$xml->evaluate('count(//s:c[@r="Q25"]/s:f)')!==1.0)
+  throw new RuntimeException('Expected numeric A25 result and preserved total formula in export.');
+ echo "PASS: A25 export contains numeric formula results and retains the workbook total formula.\n";exit;
+}
 if($action==='period-export'){
  require $root.'/lib/workbook-storage.php';
  $zip=workbook_validate($root.'/period-export.xlsx');
@@ -41,6 +51,10 @@ if($action==='period-export'){
   if($xml->evaluate('string('.$cell.'/s:v)')!=='1201331'||$xml->evaluate('count('.$cell.'/s:f)')!==0.0)
    throw new RuntimeException('Expected a numeric SQL result in '.$area.'18.');
  }
+ foreach(['Q','R','S'] as $column){
+  if($xml->evaluate('count(//s:c[@r="'.$column.'9"])')!==1.0||$xml->evaluate('count(//s:c[@r="'.$column.'18"])')!==1.0)
+   throw new RuntimeException('Collapsed TOTAL column missing from export: '.$column);
+ }
  echo "PASS: period export package, heading, preview value, protected formula and hidden row verified.\n";exit;
 }
 if($action==='total-unavailable'){
@@ -51,8 +65,7 @@ if($action==='reader-offline'){
  $path=$root.'/config/query-settings.local.php';$cfg=require $path;$cfg['reader']['host']='127.0.0.1';$cfg['reader']['port']=1;
  file_put_contents($path,"<?php\nreturn ".var_export($cfg,true).";\n");exit;
 }
-if(in_array($action,['proposal-fields','legacy-proposal'],true)){$session=(string)($argv[3]??'');if(!preg_match('/^[a-zA-Z0-9,-]{16,128}$/D',$session))throw new RuntimeException('Invalid isolated session.');session_save_path($root.'/storage/sessions');session_id($session);session_start();if(!isset($_SESSION['queryProposal']))throw new RuntimeException('No proposal.');if($action==='legacy-proposal'){$_SESSION['queryProposal']['config']=['obsolete'=>'must not authorize anything'];$_SESSION['queryProposal']['mappingRevision']=999999;}else echo json_encode(array_keys($_SESSION['queryProposal']),JSON_THROW_ON_ERROR);session_write_close();exit;}
-if($action==='expire-proposal'){$session=(string)($argv[3]??'');if(!preg_match('/^[a-zA-Z0-9,-]{16,128}$/D',$session))throw new RuntimeException('Invalid fixture session.');session_save_path($root.'/storage/sessions');session_id($session);session_start();if(!isset($_SESSION['queryProposal']))throw new RuntimeException('No isolated proposal to expire.');$_SESSION['queryProposal']['expires']=time()-1;session_write_close();exit;}
+if($action==='expire-test'){$session=(string)($argv[3]??'');if(!preg_match('/^[a-zA-Z0-9,-]{16,128}$/D',$session))throw new RuntimeException('Invalid fixture session.');session_save_path($root.'/storage/sessions');session_id($session);session_start();if(!isset($_SESSION['queryTest']))throw new RuntimeException('No isolated proposal to expire.');$_SESSION['queryTest']['expires']=time()-1;session_write_close();exit;}
 if($action==='stats'){
  $out=[];foreach(['genstat_query_definitions','genstat_row_query_mappings','genstat_query_history','genstat_query_apply_operations'] as $table)$out[$table]=(int)$db->query('SELECT COUNT(*) FROM '.$table)->fetch_row()[0];$out['records']=$db->query('SELECT m.template_row_key,m.enabled,m.revision,q.query_key FROM genstat_row_query_mappings m JOIN genstat_query_definitions q ON q.id=m.query_definition_id ORDER BY m.id')->fetch_all(MYSQLI_ASSOC);echo json_encode($out,JSON_THROW_ON_ERROR);exit;
 }

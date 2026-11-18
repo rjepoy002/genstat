@@ -47,6 +47,6 @@ function sql_replacement_working_layout(array $layout,array $replacements): arra
 }
 function sql_replacement_submission(array $layout,array $incoming,array $latest): void {
  sql_replacement_validate($layout,$incoming);
- foreach($incoming as $ref=>$record)if(($latest[$ref]['signature']??null)!==$record['signature']&&empty($_SESSION['sqlReplacementGrants'][$record['signature']]))throw new InvalidArgumentException('SQL replacement requires a confirmed review: '.$ref);
+ foreach($incoming as $ref=>$record)if(($latest[$ref]['signature']??null)!==$record['signature']&&empty($_SESSION['sqlReplacementGrants'][$record['signature']]))throw new InvalidArgumentException('SQL replacement requires a successful Apply & Save: '.$ref);
  foreach($latest as $ref=>$record)if(!isset($incoming[$ref])&&empty($_SESSION['sqlRestoreGrants'][base_report_scope($layout)][$ref]))throw new InvalidArgumentException('Use Restore template formula before removing an SQL replacement: '.$ref);
 }

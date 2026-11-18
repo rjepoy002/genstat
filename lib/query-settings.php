@@ -5,17 +5,28 @@ require_once __DIR__.'/base-report-view.php';
 require_once __DIR__.'/report-areas.php';
 final class QuerySettingsError extends RuntimeException {}
 require_once __DIR__.'/report-expression.php';
+const QS_REPORTING_TABLES = [
+ 'area_master','area_mapping','overallsalessummary','billadjustment',
+ 'kwh_diff_allocation','billhistorycancelled','billhistorycancelled_2','latebills',
+];
 function qs_config(): array {
- $path=__DIR__.'/../config/query-settings.local.php';if(!is_file($path))throw new QuerySettingsError('SQL settings are not configured. Run the documented local setup.');return require $path;
+ $path=__DIR__.'/../config/query-settings.local.php';if(!is_file($path))throw new QuerySettingsError('SQL settings are not configured. Run the documented local setup.');
+ $config=require $path;$actual=$config['allowedTables']??[];$approved=QS_REPORTING_TABLES;
+ sort($actual);sort($approved);
+ if($actual!==$approved)throw new QuerySettingsError('Reporting allowlist must contain exactly the eight approved tables.');
+ return $config;
 }
 function qs_db(string $role): mysqli {
  $cfg=qs_config();$c=$cfg[$role];if(($c['user']??'')==='root')throw new QuerySettingsError('SQL settings cannot use a root database account.');
  mysqli_report(MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT);$db=mysqli_init();$db->options(MYSQLI_OPT_CONNECT_TIMEOUT,2);$db->real_connect($c['host'],$c['user'],$c['password'],$c['database'],$c['port']);$db->set_charset('utf8mb4');
  if($role==='reader'){
+  $granted=[];
   foreach($db->query('SHOW GRANTS')->fetch_all(MYSQLI_NUM) as [$grant]){
    if(str_contains($grant,'GRANT OPTION')||!preg_match('/^GRANT (USAGE|SELECT) ON (.*?) TO /i',$grant,$m))throw new QuerySettingsError('Reporting account permissions are unsafe. SELECT-only table grants are required.');
-   if(strtoupper($m[1])==='SELECT'){$parts=explode('.',str_replace('`','',$m[2]));if(count($parts)!==2||$parts[0]!==$c['database']||!in_array($parts[1],$cfg['allowedTables'],true))throw new QuerySettingsError('Reporting account grants exceed the approved table allowlist.');}
+   if(strtoupper($m[1])==='SELECT'){$parts=explode('.',str_replace('`','',$m[2]));if(count($parts)!==2||$parts[0]!==$c['database']||!in_array($parts[1],$cfg['allowedTables'],true))throw new QuerySettingsError('Reporting account grants exceed the approved table allowlist.');$granted[]=$parts[1];}
   }
+  $missing=array_diff(QS_REPORTING_TABLES,$granted);
+  if($missing)throw new QuerySettingsError('Reporting account is missing SELECT on: '.implode(', ',$missing).'.');
   $db->query("SET SESSION sql_mode='STRICT_TRANS_TABLES,NO_BACKSLASH_ESCAPES'");
   // MariaDB enforces this server-side even for expensive intermediate CTEs.
   if(!str_contains(strtolower($db->server_info),'mariadb'))throw new QuerySettingsError('This executor requires verified MariaDB statement-timeout support.');
@@ -101,7 +112,6 @@ function qs_normalize(array $l,array $input): array {
  $rows=qs_rows($l);$key=$input['rowKey']??'';if(!isset($rows[$key]))throw new QuerySettingsError('Select an eligible, visible report row.');
  $row=$rows[$key];$out=['rowKey'=>$key,'queryKey'=>trim((string)($input['queryKey']??'')),'sql'=>(string)($input['sql']??''),'areaColumn'=>trim((string)($input['areaColumn']??'')),'valueColumn'=>trim((string)($input['valueColumn']??'')),'sacodeColumn'=>trim((string)($input['sacodeColumn']??'')),'bindings'=>[],'excluded'=>array_values(array_unique(array_map('strval',$input['excluded']??[]))),'enabled'=>!empty($input['enabled']),'allowFormulaReplacement'=>($input['allowFormulaReplacement']??false)===true];
  $out+=qs_calculation_settings($input);$out['canonicalRowId']=qs_canonical_row_id($l,$key);
- if($out['formulaEnabled']&&($row['row']!==18||$out['formulaTarget']!=='total_kwh_sold'))throw new QuerySettingsError('Report formulas currently support Total KWH Sold, row 18 only.');
  $out['allowFormulaReplacement']=$out['enabled']&&sql_replacement_row_approved($l,$key);
  if($out['allowFormulaReplacement']&&!$out['enabled'])throw new QuerySettingsError('Enable this SQL row mapping before opting into formula replacement.');$targets=qs_targets($l,$out);
  if(!preg_match('/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/D',$out['queryKey']))throw new QuerySettingsError('Use a query identifier starting with a letter (letters, digits, _ or -).');
@@ -117,20 +127,6 @@ function qs_normalize(array $l,array $input): array {
  ksort($out['bindings']);sort($out['excluded']);return $out;
 }
 function qs_fingerprint(array $config,array $l): string{return hash('sha256',json_encode([$l['sha256'],base_report_month($l),$config],JSON_THROW_ON_ERROR));}
-function qs_target_comparison(array $l,string $ref,string $proposed,$before=null): array {
- $cell=$l['sheets'][0]['cells'][$ref];if(func_num_args()<4)$before=$cell['value'];$current=$cell;$current['value']=(string)$before;$current['type']=is_numeric($before)?'n':'str';$after=$cell;$after['value']=$proposed;$after['type']='n';
- $difference=is_numeric($before)?(float)$proposed-(float)$before:null;
- return ['before'=>$before,'value'=>$proposed,'difference'=>$difference,'currentDisplay'=>$before===null?'Unavailable':display_value($current,$l),'proposedDisplay'=>display_value($after,$l),'differenceDisplay'=>$difference===null?'Unavailable':number_format($difference,2,'.',',')];
-}
-function qs_review_target(array $l,array $change,array $live,array $values,array $formulas,array $replacements): array {
- $ref=$change['ref'];$before=$live['cells'][$ref]['value'];
- $engineKey=$l['sheets'][0]['name'].'!'.$ref;
- $cacheFallback=false;foreach($live['warnings']??[] as $warning)if(($warning['cell']??'')===$engineKey)$cacheFallback=true;
- if(!empty($live['cells'][$ref]['error'])||($cacheFallback&&!is_numeric($l['sheets'][0]['cells'][$ref]['value']??null)))$before=null;$manual=array_key_exists($ref,$values)||array_key_exists($ref,$formulas);$sourceFormula=expanded_formulas($l['sheets'][0])[$ref]??null;
- $firstReplacement=!empty($change['formulaReplacement'])&&!isset($replacements[$ref]);$same=is_numeric($before)&&(float)$before===(float)$change['value'];
- $type=$firstReplacement?'Formula replacement':($same?'Unchanged':($manual?'Manual value conflict':'Normal SQL update'));
- return array_replace($change,qs_target_comparison($l,$ref,$change['value'],$before),['rowLabel'=>qs_rows($l)[$change['rowKey']]['label'],'manualConflict'=>$manual,'existingFormula'=>$sourceFormula!==null&&!isset($replacements[$ref])?($formulas[$ref]??$sourceFormula):null,'changeType'=>$type]);
-}
 function qs_match(array $l,array $config,array $result,array $areas,array $areaMappings): array {
  $errors=[];$notes=[];$changes=[];$blocked=[];$seen=[];$seenCombos=[];$expected=[];$known=array_column($areas,'AreaName','AreaID');
  $row=qs_rows($l)[$config['rowKey']];$targets=qs_targets($l,$config);$aliases=[];
@@ -152,7 +148,7 @@ function qs_match(array $l,array $config,array $result,array $areas,array $areaM
   if(in_array($key,$config['excluded'],true)){$notes[]='Explicitly excluded result area '.$key;continue;}
   if(!isset($expected[$key])){
    $alias=$aliases[$id]??null;$protected=$alias?($row['protectedCells'][$alias['ref']]??null):null;
-   if($protected){$ref=$alias['ref'];$reason='Result area '.$key.' ('.$alias['label'].') resolves to '.$l['sheets'][0]['name'].'!'.$ref.': '.$protected['reason'].($protected['formula']?' '.$protected['formula']:'').'. SQL cannot overwrite this cell.';if(empty($config['formulaEnabled']))$errors[]=$reason;else $notes[]=$reason;$raw=is_float($value)?sprintf('%.17g',$value):(string)$value;$blocked[]=qs_target_comparison($l,$ref,$raw)+['ref'=>$ref,'areaId'=>$id,'areaName'=>$known[$id],'reason'=>$reason,'rowLabel'=>$row['label']];}
+   if($protected){$ref=$alias['ref'];$reason='Result area '.$key.' ('.$alias['label'].') resolves to '.$l['sheets'][0]['name'].'!'.$ref.': '.$protected['reason'].($protected['formula']?' '.$protected['formula']:'').'. SQL cannot overwrite this cell.';$errors[]=$reason;$blocked[]=['ref'=>$ref,'areaId'=>$id,'areaName'=>$known[$id],'reason'=>$reason,'rowLabel'=>$row['label']];}
    else $errors[]='Result area '.$key.' has no Excel mapping. Map or explicitly exclude it.';continue;
   }
   $ref=$expected[$key];$target=$targets[$ref]??null;if(!$target){$errors[]='Unauthorized SQL target '.$ref;continue;}$changes[$ref]=['ref'=>$ref,'rowKey'=>$config['rowKey'],'areaId'=>$id,'areaName'=>$known[$id],'value'=>is_float($value)?sprintf('%.17g',$value):(string)$value,'formulaReplacement'=>!empty($target['formulaReplacement']),'originalFormula'=>$target['formula']??null,'excelArea'=>$target['label'],'mappingSource'=>$config['mappingSources'][$ref]??'saved','formulaUsed'=>!empty($config['formulaEnabled'])?$config['formulaExpression']:$config['valueColumn']];
@@ -165,6 +161,33 @@ function qs_area_metadata(): array {
 }
 function qs_record_config(array $record): array {
  return ['rowKey'=>$record['template_row_key'],'queryKey'=>$record['query_key'],'sql'=>$record['sql_text'],'areaColumn'=>$record['area_column'],'sacodeColumn'=>$record['sacode_column'],'valueColumn'=>$record['value_column'],'bindings'=>$record['bindings'],'excluded'=>$record['excluded'],'enabled'=>(bool)$record['enabled'],'allowFormulaReplacement'=>(bool)($record['allow_formula_replacement']??false)]+qs_calculation_settings(json_decode($record['calculation_settings_json']??'{}',true,512,JSON_THROW_ON_ERROR)??[]);
+}
+function qs_validate_result_month(array $result,string $month): void {
+ foreach($result['rows'] as $row)foreach($row as $column=>$value){
+  if(in_array(strtolower($column),['billmonth','reportmonth'],true)&&(string)$value!==$month)
+   throw new QuerySettingsError('The query returned a different reporting month.');
+ }
+}
+// Badge provenance for editable overlays is independent of formula replacement.
+function qs_value_source(array $layout,string $ref,string $value): string {
+ return sql_replacement_signature(['kind'=>'editable-sql-value','scope'=>base_report_scope($layout),'ref'=>$ref,'value'=>$value]);
+}
+function qs_verified_value_sources(array $layout,array $values,$sources): array {
+ $verified=[];
+ foreach(is_array($sources)?$sources:[] as $ref=>$signature){
+  $value=$values[$ref]??null;
+  if(is_string($value)&&is_numeric($value)&&is_finite((float)$value)&&is_string($signature)
+     &&hash_equals(qs_value_source($layout,$ref,$value),$signature))$verified[$ref]=$signature;
+ }
+ return $verified;
+}
+function qs_enabled_value_targets(array $layout,array $records): array {
+ $rows=qs_rows($layout);$targets=[];
+ foreach($records as $key=>$record){
+  if(!$record['enabled']||$record['template_hash']!==$layout['sha256']||!isset($rows[$key]))continue;
+  foreach(array_intersect_key(qs_targets($layout,['rowKey'=>$key]),$record['bindings']) as $ref=>$cell)$targets[$ref]=$key;
+ }
+ return $targets;
 }
 function qs_period_preview(array $layout,bool $onlyTotal=false): array {
  try{
@@ -181,18 +204,13 @@ function qs_period_preview(array $layout,bool $onlyTotal=false): array {
   if($onlyTotal&&!$isTotal)continue;
   if($isTotal)$total=array_fill_keys(array_keys(qs_targets($layout,qs_record_config($record))),null);
   try{
-   if($record['template_hash']!==$layout['sha256'])throw new QuerySettingsError('Review the saved row configuration for the current reference workbook.');
+   if($record['template_hash']!==$layout['sha256'])throw new QuerySettingsError('Test and save the row configuration for the current reference workbook.');
    $config=qs_normalize($layout,qs_record_config($record));
    // A fixed period can override a valid placeholder elsewhere in the query.
    if(preg_match('/\b[12][0-9]{3}(0[1-9]|1[0-2])\b/',$config['sql']))
     throw new QuerySettingsError('Review the fixed reporting month in SQL Query Settings.');
    $result=$results[$config['sql']]??=qs_execute($config['sql'],$month);
-   foreach($result['rows'] as $row){
-    foreach($row as $column=>$value){
-     if(in_array(strtolower($column),['billmonth','reportmonth'],true)&&(string)$value!==$month)
-      throw new QuerySettingsError('The query returned a different reporting month.');
-    }
-   }
+   qs_validate_result_month($result,$month);
    $area??=qs_area_metadata();
    $match=qs_match($layout,$config,$result,$area['areas'],$area['areaMappings']);
    if($match['errors'])throw new QuerySettingsError($match['errors'][0]);
@@ -207,7 +225,7 @@ function qs_period_preview(array $layout,bool $onlyTotal=false): array {
    }
   }
  }
- return ['values'=>$values,'total'=>$total];
+ return ['values'=>$values,'total'=>$total,'sqlTargets'=>qs_enabled_value_targets($layout,$records)];
 }
 function qs_period_preview_token(array $layout,array $values,array $total): string {
  return hash_hmac('sha256',base_report_scope($layout).':'.qs_stable_hash([$values,$total]),$_SESSION['baseCsrf']);
@@ -238,6 +256,7 @@ function qs_calculation_settings(array $input): array {
  foreach($sources as $source)if(!in_array($source,['auto','manual','saved'],true))throw new QuerySettingsError('Invalid mapping source.');
  $column=(string)($input['autoMatchColumn']??'');if(strlen($column)>64)throw new QuerySettingsError('Invalid automatic matching column.');
  $expression=trim((string)($input['formulaExpression']??''));if(strlen($expression)>2048)throw new QuerySettingsError('Formula exceeds 2048 characters.');
+ // The row key determines the destination. Retain the legacy formula target for saved configuration hashes and history.
  return ['canonicalRowId'=>(string)($input['canonicalRowId']??''),'autoMatchColumn'=>$column,'matchingMethod'=>$method,'mappingSources'=>$sources,'formulaTarget'=>(string)($input['formulaTarget']??'total_kwh_sold'),'formulaExpression'=>$expression,'formulaEnabled'=>!empty($input['formulaEnabled'])];
 }
 

@@ -14,9 +14,9 @@ const {chromium}=require(process.env.TEMP+'\\genstat-browser\\node_modules\\play
   await page.locator('#sql-editor').fill(`SELECT AreaID, AreaName, CASE WHEN AreaID=12 THEN 3776446.00 ELSE AreaID*100 END AS TotalKWhSold FROM area_master WHERE CAST(:ReportMonth AS UNSIGNED)=202607 AND AreaID IN (${ids.join(',')}) ORDER BY AreaID DESC`);
   await page.locator('#sql-test').click();await page.waitForFunction(()=>!document.querySelector('#sql-settings-dialog').hasAttribute('aria-busy'));assert((await page.locator('#sql-editor-state').textContent()).includes('validated'));
   assert.equal(await page.locator('#sql-preview tbody tr').count(),15);assert.equal((await page.locator('#sql-diagnostics').textContent()).trim(),'');
-  const comparison=await page.locator('#sql-protected-preview').textContent();for(const v of ['F18','3,778,736.00','3,776,446.00','-2,290.00'])assert(comparison.includes(v));
-  assert.equal(await page.locator('#sql-save-config').count(),0);assert(await page.locator('#sql-apply').isDisabled());assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),original);
-  await page.locator('#sql-protected-preview').scrollIntoViewIfNeeded();await page.screenshot({path:'tests/brookes-point-approved-preview.png'});
-  assert.deepEqual(errors,[]);console.log('PASS: verified alias defaults, 15 recognized areas / 15 approved inputs, live 15-row SQL preview, exact reviewed difference, no save/apply or value overwrite');
+  assert(await page.locator('#sql-apply').isEnabled());
+  assert.equal(await page.locator('#sql-save-config').count(),0);assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),original);
+  await page.locator('#sql-preview').scrollIntoViewIfNeeded();await page.screenshot({path:'tests/brookes-point-approved-preview.png'});
+  assert.deepEqual(errors,[]);console.log('PASS: verified alias defaults, 15 recognized areas / 15 approved inputs, live 15-row SQL preview, no save/apply or value overwrite');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

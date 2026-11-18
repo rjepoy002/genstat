@@ -1,6 +1,6 @@
 'use strict';
 const {validate}=require('../tools/validate-report-sql.cjs'),assert=require('assert');
-const config={database:'genstat_db',allowedTables:['area_master','area_mapping','overallsalessummary','billadjustment','kwh_diff_allocation','billhistorycancelled','billhistorycancelled_2']};
+const config={database:'genstat_db',allowedTables:['area_master','area_mapping','overallsalessummary','billadjustment','kwh_diff_allocation','billhistorycancelled','billhistorycancelled_2','latebills']};
 const valid=`WITH params AS (SELECT :ReportMonth AS ReportMonth)
 SELECT a.AreaID, a.AreaName, SUM(s.KWH) AS Sales_KWH, TRUNCATE(SUM(s.KWH),2) AS KWH_Diff
 FROM area_master a JOIN overallsalessummary s ON a.AreaID=1
@@ -20,4 +20,5 @@ const cancelled=`WITH params AS (SELECT :ReportMonth AS ReportMonth),
  ROW_NUMBER() OVER (PARTITION BY a.SACode ORDER BY a.Cancelled_KWH) AS SequenceNo FROM cancellations a LEFT JOIN cancellations2 b ON b.SACode=a.SACode`;
 assert.deepEqual(validate({...config,sql:cancelled}).tables.sort(),['billhistorycancelled','billhistorycancelled_2']);
 for(const sql of ['SELECT :ReportMonth FROM genstat_db.billhistorycancelled /* comment */','SELECT :ReportMonth FROM billhistorycancelled -- comment','SELECT :ReportMonth FROM billhistorycancelled # comment','SELECT /*+ hint */ :ReportMonth FROM billhistorycancelled','SELECT :ReportMonth FROM billhistorycancelled; DELETE FROM billhistorycancelled','SELECT :ReportMonth, SLEEP(1) FROM billhistorycancelled','SELECT :ReportMonth FROM other_db.billhistorycancelled','SELECT :ReportMonth FROM overallsalessummary_x','SELECT :ReportMonth FROM billadjustment_1'])assert.throws(()=>validate({...config,sql}));
-console.log('PASS: exactly seven reporting tables accepted, qualified names, cancelled-table CTEs/joins/aggregates/window functions; comments/hints, unsafe functions, multiple statements, alternate tables and cross-database access remain blocked');
+assert.throws(()=>validate({...config,sql:'SELECT :ReportMonth FROM other_db.latebills'}));
+console.log('PASS: eight reporting tables accepted, including qualified and unqualified latebills; comments/hints, unsafe functions, multiple statements, alternate tables and cross-database access remain blocked');

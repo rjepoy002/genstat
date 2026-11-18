@@ -34,7 +34,6 @@
 #sql-settings-dialog .settings-preview td,#sql-settings-dialog .settings-preview th{position:static;white-space:nowrap!important;text-align:left!important;padding:9px 12px!important;line-height:1.4;max-width:420px}
 #sql-settings-dialog .settings-preview th{position:sticky;top:0;z-index:2;background:#f1f5f9!important;color:#475569!important;text-align:left!important}
 #sql-settings-dialog .settings-preview td[data-numeric=true]{text-align:right!important;font-variant-numeric:tabular-nums}
-#sql-settings-dialog .settings-preview td[data-wrap=true]{white-space:normal!important;min-width:190px;overflow-wrap:anywhere}
 #sql-settings-dialog .settings-preview tr:hover td{background:#f8fafc}
 #sql-settings-dialog .settings-preview th:last-child,#sql-settings-dialog .settings-preview td:last-child{border-right:0!important}
 #sql-settings-dialog .sql-empty{@apply m-0 px-4 py-8 text-center text-xs leading-relaxed text-slate-500;}
@@ -53,3 +52,6 @@
 #sql-settings-dialog #sql-message[data-error=true]{border-color:#fecdd3;background:#fff1f2;color:#9f1239}
 #sql-settings-dialog #sql-apply-reason[data-ready=true]{color:#0f766e}
 @media(max-width:640px){#sql-settings-dialog.sql-modal{width:96vw;max-width:96vw;max-height:96dvh;border-radius:12px}#sql-settings-dialog .sql-card{padding:12px}.sql-dialog-header{padding:12px 16px}#sql-settings-dialog .sql-actions>button,#sql-settings-dialog .sql-apply-actions>button{width:100%}#sql-settings-dialog .settings-preview{max-height:280px}#sql-settings-dialog #sql-duration{margin-left:0}#sql-settings-dialog .sql-mapping-item{overflow-wrap:anywhere}}
+
+#sql-apply-loading{position:fixed;inset:0;margin:auto;height:fit-content}
+#sql-apply-loading::backdrop{background:#0009;backdrop-filter:blur(3px)}

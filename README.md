@@ -8,11 +8,11 @@ Open `http://localhost/genstat/index.php?sheet=Jun26` for the annual workbook ed
 
 Select an eligible report row, enter a SELECT query, and use **Test Query**. The application binds `:ReportMonth` from the sheet, such as `202607` for Jul26. Test shows the query result and supports area mapping, exclusions, and optional decimal calculations. This step leaves saved configuration and report values untouched.
 
-Use **Review Proposed Changes** to inspect the proposed values and affected cells. **Apply & Save** requires a valid, unexpired review and confirmation. Formula replacement on approved rows requires a separate confirmation. The server rejects stale reviews, invalid mappings, missing values, and unauthorized targets. Formula cells outside approved rows remain protected.
+Use **Test Query** to validate the SQL, results, and mappings. **Apply & Save** becomes available after a successful test and re-runs the query for the selected period before saving. Changing the SQL, row, mapping, or reporting period requires a new test. Only approved rows can replace source formulas.
 
-Apply & Save commits configuration, history changes, and a recovery receipt in one transaction, then loads the reviewed values into the pending report. Use **Save Draft** to persist those values and their signed SQL replacement records. Select a replaced cell and confirm **Restore Template Formula** to recover its original expression, then save the draft.
+Apply & Save commits configuration, history changes, and a recovery receipt in one transaction, then refreshes the current report with the computed values. Use **Save Draft** to persist pending values and signed SQL replacement records. Select a replaced cell to clear its saved override, then save the draft.
 
-**Configuration History** shows previous versions. To restore one, select it and run Test, Review, and Apply & Save again. Confirm **Disable Configuration** to disable a row while preserving its history and report values. If a response is lost, retry the same operation or use the recovery action from the initiating session before starting another review. The receipt prevents duplicate writes. [Apply & Save workflow](docs/sql-settings-apply-save.md) · [Approved SQL row overwrite](docs/approved-sql-row-overwrite.md)
+**Configuration History** shows previous versions. To restore one, select it and run Test Query and Apply & Save again. Confirm **Disable Configuration** to disable a row while preserving its history and report values. If a response is lost, retry the same operation or use the recovery action from the initiating session before starting another test. The receipt prevents duplicate writes. [Reporting periods and SQL workflow](docs/dynamic-reporting-months.md)
 
 ## Annual workbook editing
 
@@ -26,7 +26,7 @@ Use the existing XAMPP installation with Apache, PHP, and MariaDB. PHP needs DOM
 
 Use `npm.cmd ci` and `npm.cmd run build:css` when installing dependencies or rebuilding local CSS. The SQL modal styles are built from `assets/tailwind.input.css`. Compact report layout styles are in `assets/base-report.css`.
 
-Grant the reporting account SELECT on exactly these tables in `genstat_db`: `overallsalessummary`, `billadjustment`, `billhistorycancelled`, `billhistorycancelled_2`, `area_mapping`, `area_master`, and `kwh_diff_allocation`. A separate settings writer handles configurations, history, and receipts. SQL execution validates a single SELECT against the parser and table allowlist, restricts functions and query syntax, binds the reporting month, and enforces time and result limits. Settings requests require a valid CSRF token. [SQL Query Settings](docs/sql-query-settings.md)
+Grant the reporting account SELECT on exactly these eight tables in `genstat_db`: `overallsalessummary`, `billadjustment`, `billhistorycancelled`, `billhistorycancelled_2`, `area_mapping`, `area_master`, `kwh_diff_allocation`, and `latebills`. Existing installations must also include `latebills` in `config/query-settings.local.php` under `allowedTables`. Verify both the local allowlist and table-level grants with `php tools/verify-reporting-access.php`. A separate settings writer handles configurations, history, and receipts. SQL execution validates a single SELECT against the parser and table allowlist, restricts functions and query syntax, binds the reporting month, and enforces time and result limits. Settings requests require a valid CSRF token. [SQL Query Settings](docs/sql-query-settings.md)
 
 ## Regression testing
 

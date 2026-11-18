@@ -36,7 +36,7 @@ function prepareCompact(fixture){
   fs.writeFileSync(path.join(fixture,'router.php'),`<?php
 if (parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) === '/query-settings-api.php') {
     $action = json_decode(file_get_contents('php://input'), true)['action'] ?? '';
-    if (!in_array($action, ['metadata','inspect-result','preview-formula','auto-match','test','history','refresh-preview'], true)) {
+    if (!in_array($action, ['metadata','inspect-result','preview-formula','auto-match','test','history'], true)) {
         http_response_code(403);
         return true;
     }

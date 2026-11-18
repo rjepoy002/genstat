@@ -31,12 +31,26 @@ $config=qs_normalize($l,['rowKey'=>$key,'queryKey'=>'READONLY_FORMULA_CHECK','ar
 $result=qs_execute('WITH params AS (SELECT :ReportMonth AS ReportMonth) SELECT AreaID, 1200838.00 AS Sales_KWH, -455.00 AS KWH_Diff, 36.00 AS Total_Cancelled_KWH, 1201293.00 AS TotalKWhSold FROM area_master ORDER BY AreaID DESC','202607');
 $match=qs_match($l,$config,$result,$area['areas'],$area['areaMappings']);check(!$match['errors']&&$match['changes']['G18']['value']==='1200419','Live SQL computed value uses formula and preserves negative adjustment');
 check(isset($match['changes']['F18'])&&count($match['changes'])===15&&!$match['blockedTargets'],'Approved formula and 14 ordinary targets all receive computed values');
-$live=base_report_calculate($l,[],[]);$review=qs_review_target($l,$match['changes']['G18'],$live,['G18'=>'1'],[],[]);check($review['manualConflict']&&$review['formulaUsed']===$config['formulaExpression'],'Computed review keeps manual conflict warning and formula provenance');
-rejects(fn()=>qs_normalize($l,array_replace($config,['rowKey'=>'genstat-base/Jul26/A11'])),'Formula editing restricted to row 18');
-$review=qs_review_target($l,$match['changes']['F18'],$live,[],[],[]);check($review['existingFormula']==='=3011664+767072'&&$review['changeType']==='Formula replacement','F18 review retains original formula and replacement warning');
+foreach ([11,25] as $rowNumber) {
+ $rowKey='genstat-base/Jul26/A'.$rowNumber;
+ $rowBindings=[];
+ foreach(array_keys(qs_targets($l,['rowKey'=>$rowKey])) as $ref){
+  $rowBindings[$ref]=$bindings[$ref[0].'18'];
+ }
+ $adjustment=qs_normalize($l,array_replace($config,[
+  'rowKey'=>$rowKey,'bindings'=>$rowBindings,'valueColumn'=>'KWH_Diff','formulaExpression'=>'KWH_Diff * 2',
+ ]));
+ $matched=qs_match($l,$adjustment,$result,$area['areas'],$area['areaMappings']);
+ $ref=array_key_first($rowBindings);
+ check(!$matched['errors']&&$matched['changes'][$ref]['value']==='-910','Eligible row '.$rowNumber.' applies its own numeric expression');
+ $fallback=qs_match($l,array_replace($adjustment,['formulaEnabled'=>false]),$result,$area['areas'],$area['areaMappings']);
+ check(!$fallback['errors']&&(float)$fallback['changes'][$ref]['value']===-455.0,'Eligible row '.$rowNumber.' retains its saved value-column behavior when disabled');
+ $invalid=qs_match($l,array_replace($adjustment,['formulaExpression'=>'MissingColumn']),$result,$area['areas'],$area['areaMappings']);
+ check($invalid['errors']&&!$invalid['changes'],'Eligible row '.$rowNumber.' rejects a missing formula column');
+}
+rejects(fn()=>qs_normalize($l,array_replace($config,['rowKey'=>'genstat-base/Jul26/A999'])),'Formula target must be an eligible SQL row');
 $unknown=$config;$unknown['bindings']['ZZ999']=['areaId'=>'8','sacode'=>''];rejects(fn()=>qs_normalize($l,$unknown),'Unknown workbook mapping rejected');
 $outside=$config;$outside['bindings']['B15']=['areaId'=>'8','sacode'=>''];rejects(fn()=>qs_normalize($l,$outside),'Mapping outside approved input row rejected');
 $missing=$config;unset($missing['bindings']['F18']);rejects(fn()=>qs_normalize($l,$missing),'Unresolved F18 mapping must be completed');
-$uncached=$l;$uncached['sheets'][0]['cells']['F18']['formula']='UNSUPPORTED(1)';$uncached['sheets'][0]['cells']['F18']['value']='';$uncachedLive=base_report_calculate($uncached);$review=qs_review_target($uncached,$match['changes']['F18'],$uncachedLive,[],[],[]);check($review['difference']===null&&$review['differenceDisplay']==='Unavailable','Missing formula cache never becomes a zero comparison');
 $unapproved=$config;$unapproved['rowKey']='genstat-base/Jul26/A15';try{sql_replacement_issue($l,'B15','1',$unapproved,1);throw new RuntimeException('Unauthorized replacement accepted');}catch(InvalidArgumentException $e){check(true,'Signed replacement cannot be issued outside approved row');}
 echo "$count assertions passed. No workbook or saved configuration changed.\n";

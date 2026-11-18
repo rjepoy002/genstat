@@ -2,7 +2,7 @@
 
 ## Month discovery and selection
 
-The compact GENSTAT report lists distinct `overallsalessummary.BillMonth` values through the existing read-only reporting account. It removes malformed values, rejects invalid calendar months, and sorts valid `YYYYMM` values newest first. Labels display the month and year, such as August 2026. The reporting account already has SELECT access to `overallsalessummary`. The seven-table reporting allowlist and database schema are unchanged.
+The compact GENSTAT report lists distinct `overallsalessummary.BillMonth` values through the existing read-only reporting account. It removes malformed values, rejects invalid calendar months, and sorts valid `YYYYMM` values newest first. Labels display the month and year, such as August 2026. Month discovery still reads `overallsalessummary` after the reporting allowlist expanded to eight tables with `latebills`.
 
 Open the compact report or use an explicit link such as `index.php?month=202607`. A valid explicit selection takes precedence, then the last selection in the same browser session, then the newest available month. An unavailable explicit month produces an error. The toolbar lists available years newest first and the selected year's months in calendar order. When changing years, it keeps the same month if available or selects the newest available month in that year. A period change with unsaved edits asks whether to discard them. Cancel preserves the report and its edits.
 
@@ -14,11 +14,11 @@ The period switch uses one request and updates the heading, table, selectors and
 
 Definitions, row mappings, histories, and calculated expressions remain shared across months. Their existing row keys identify rows in the reference sheet. **Disable Configuration** and changes to a shared expression or mapping therefore apply to that configuration in every month. Configurations, expressions, and SQL text were preserved.
 
-Test binds the selected month through the existing prepared `:ReportMonth` parameter. Review uses the tested result for that month. Apply uses the confirmed proposal and validates its month, configuration, template, area mapping, overlays and draft revision. An Apply for another month needs its own Test and Review. The operation receipt stays bound to its month, session, template and draft version. SQL settings still use a separate **Save Draft** step to persist applied values on the report.
+Test Query binds the selected month through the existing prepared `:ReportMonth` parameter and validates the results and mappings. Apply & Save requires a successful test for the same period and settings, then executes and validates the query again before committing. It refreshes the current report using the committed response. The operation receipt stays bound to its month, session, template and draft version. Use **Save Draft** to persist the pending report values.
 
-Selecting a month leaves SQL text intact. The editor flags values that look like a fixed reporting month for manual review. Automatic preview stops if a saved query contains a value that looks like a fixed month, or returns a `BillMonth` or `ReportMonth` that differs from the selection. The existing validator requires the supported placeholder. The query can be corrected through the existing Test, Review and Apply workflow.
+Selecting a month leaves SQL text intact. The editor flags values that look like a fixed reporting month. Automatic preview stops if a saved query contains a value that looks like a fixed month. Queries that return a `BillMonth` or `ReportMonth` different from the selection cannot be tested successfully or applied. The validator requires the supported placeholder.
 
-Preview values for other rows stay separate from the editable draft. For the enabled **Total KWH Sold** configuration, the query's mapped values take priority over source formulas, cached numbers, and old draft overlays on both initial load and period changes. F18 and the other mapped area cells are read-only in the compact report. A failed or incomplete result shows the row as unavailable. Configuration changes still use Test, Review, and Apply.
+Preview values for other rows stay separate from the editable draft. For the enabled **Total KWH Sold** configuration, the query's mapped values take priority over source formulas, cached numbers, and old draft overlays on both initial load and period changes. F18 and the other mapped area cells are read-only in the compact report. A failed or incomplete result shows the row as unavailable. Apply & Save can replace formulas in an explicitly approved SQL row.
 
 ## Draft isolation and July compatibility
 
@@ -28,9 +28,9 @@ The July report reads a pre-existing hash-only draft when July has no month-spec
 
 ## Errors and operational limits
 
-The report and settings API return a controlled error when the reporting database cannot supply month availability. An empty list produces an unavailable message. Invalid months, stale drafts, and proposals or signatures from a different month are rejected. Reload an old browser tab after deployment to obtain the new month-scoped token.
+The report and settings API return a controlled error when the reporting database cannot supply month availability. An empty list produces an unavailable message. Invalid months, stale drafts, and test tokens or signatures from a different month are rejected.
 
-The selector uses the current database contents. The most recent SQL Test and Review in a session remain the active ones. If testing or reviewing in multiple tabs supersedes older work, retest and review the intended month.
+The selector uses the current database contents. The most recent successful test in a session supplies the active token. If testing in multiple tabs supersedes older work, run Test Query again in the intended tab.
 
 **Export Excel** downloads the currently displayed compact period. Mapped Total KWH Sold cells export as numbers, including F18, or as `#N/A` when unavailable. The export retains the template tab name, selected-period heading and filename, hidden rows, and unrelated formulas. Non-July exports use cached report calculations and open in manual calculation mode. The annual export and synchronization paths continue to operate on the annual workbook.
 
@@ -44,7 +44,7 @@ node tools/run-tests.cjs tests/query-settings.php tests/sql-formula-replacement.
 node tools/run-tests.cjs tests/query-apply-save-browser.cjs
 ```
 
-The month tests cover sorting and deduplication, invalid and empty results, explicit and remembered selection, cancellation of a dirty month switch, legacy July fallback, independent revisions and values, real prepared month binding, shared settings, fixed-month warning behavior, a failed reporting reader connection, and protection against cross-month draft, proposal, receipt and signature use. The browser fixture writes only to disposable drafts and SQL settings tables. Reporting month discovery reads the configured reporting tables.
+The month tests cover sorting and deduplication, invalid and empty results, explicit and remembered selection, cancellation of a dirty month switch, legacy July fallback, independent revisions and values, prepared month binding, shared settings, fixed-month warnings, and protection against cross-month draft, test token, receipt and signature use. The browser fixture writes only to disposable drafts and SQL settings tables. Reporting month discovery reads the configured reporting tables.
 
 All **31 supported suites passed** across the lifecycle run and the run of the other 30 suites. The annual editor, Excel export, synchronization, Resync, and responsive layouts passed in the isolated environments. PHP syntax checks passed for 65 files and JavaScript syntax checks for 35 files. The lifecycle fixture verified that production SQL settings, history, and receipts were unchanged. Hash comparisons matched pre-test copies of 12 protected workbook, draft, credential, and signing-key files.
 
