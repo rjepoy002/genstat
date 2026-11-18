@@ -4,6 +4,14 @@ require_once __DIR__.'/../lib/query-settings.php';
 function qcheck(bool $ok,string $message): void{if(!$ok)throw new RuntimeException($message);echo 'PASS: '.$message.PHP_EOL;}
 $l=base_report_layout();$rows=qs_rows($l);$key='genstat-base/Jul26/A11';
 qcheck(qs_month('Jan26')==='202601'&&qs_month('Jul26')==='202607'&&qs_month('Nov26')==='202611','Month comes from worksheet, including November');
+qcheck(array_keys(qs_rows(base_report_layout()))===array_map(fn($row)=>'genstat-base/Jul26/A'.$row,[11,18,24,25,26,39]),'Visibility changes preserve the SQL input rows');
+$months=qs_sorted_months(['202607',202608,'202607',null,'','202613','202600','2026-09',' 202609','000001','202601']);
+qcheck($months===['202608','202607','202601'],'Valid calendar months are deduplicated and sorted newest first');
+qcheck(qs_select_month($months,null)==='202608'&&qs_select_month($months,null,'202607')==='202607'&&qs_select_month($months,'202601','202607')==='202601'&&qs_select_month($months,null,'202609')==='202608','Month selection honors explicit, previous and latest available month');
+foreach(['202613','202609',[],null] as $unavailable){
+ try{qs_select_month($unavailable===null?[]:$months,$unavailable);throw new RuntimeException('Unavailable month accepted');}
+ catch(QuerySettingsError $e){qcheck($e->getCode()===($unavailable===null?503:0),'Invalid or empty month selection fails closed');}
+}
 qcheck(isset($rows[$key])&&!isset($rows['genstat-base/Jul26/A19'])&&!isset($rows['genstat-base/Jul26/A15']),'Eligible metadata excludes hidden and formula-only rows');
 qcheck(!isset($rows['genstat-base/Jul26/A18']['cells']['F18']),'Mixed row excludes original F18 formula');
 $ids=[1,8,9,10,12,2,5,15,4,3,6,19,16,18,11];$bindings=[];foreach(array_keys($rows[$key]['cells']) as $i=>$ref)$bindings[$ref]=['areaId'=>(string)$ids[$i],'sacode'=>''];

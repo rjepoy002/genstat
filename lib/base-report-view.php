@@ -1,15 +1,27 @@
 <?php
 declare(strict_types=1);
 
+const BASE_REPORT_LEGACY_MONTH = '202607';
+
+function base_report_valid_month($month): bool {
+ return is_string($month)&&preg_match('/^(?!0000)[0-9]{4}(0[1-9]|1[0-2])$/D',$month)===1;
+}
+function base_report_month(array $layout): string {
+ return $layout['reportMonth']??BASE_REPORT_LEGACY_MONTH;
+}
+function base_report_scope(array $layout): string {
+ return $layout['sha256'].'-'.base_report_month($layout);
+}
+function base_report_csrf(string $month): string {
+ return hash_hmac('sha256',$month,$_SESSION['baseCsrf']);
+}
+function base_report_month_label(string $month): string {
+ return DateTimeImmutable::createFromFormat('!Ym',$month)->format('F Y');
+}
+
 // Presentation policy only: never filter the source worksheet/calculation layout.
-function base_report_hidden_descriptions(): array {
- return ['Total KWH Sold (w/o BILL ADJ)','Dist. System Loss In KWH - ADJ','Rate of Dist. System - ADJ','System Loss in KWH - ADJ','Rate of System Loss -ADJ'];
-}
-function base_report_normalize_description(string $label): string {
- return strtolower(trim(preg_replace('/\s+/u',' ',$label)));
-}
 function base_report_row_hidden(string $label): bool {
- return in_array(base_report_normalize_description($label),array_map('base_report_normalize_description',base_report_hidden_descriptions()),true);
+ return preg_match('/(?<![\p{L}\p{N}\p{M}_])ADJ(?![\p{L}\p{N}\p{M}_])/iu',$label)===1;
 }
 function base_report_row_spacer(array $sheet,array $report,int $row): bool {
  if($row<=$report['firstRow']+1)return false;

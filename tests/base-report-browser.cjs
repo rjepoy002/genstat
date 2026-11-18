@@ -3,11 +3,13 @@ const {chromium}=require(process.env.TEMP+'\\genstat-browser\\node_modules\\play
 const assert=require('assert');
 const fs=require('fs'),path=require('path');
 (async()=>{
+ const fixtureUrl=process.env.GENSTAT_TEST_COMPACT_URL;
+ if(!fixtureUrl)throw Error('Run this save test through node tools/run-tests.cjs tests/base-report-browser.cjs.');
  const browser=await chromium.launch({executablePath:'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',headless:true});
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];let testDraft=null;
  page.on('pageerror',e=>errors.push(e.message));
  try{
-  await page.goto(process.env.GENSTAT_TEST_COMPACT_URL||'http://localhost/genstat/');
+  await page.goto(fixtureUrl);
   for(const [endpoint,action,error] of [
    ['base-report.php','unlock','Invalid session token.'],
    ['query-settings-api.php','metadata','Session expired. Reload the report.'],
@@ -40,8 +42,8 @@ const fs=require('fs'),path=require('path');
   await page.locator('#formula').fill('=SUM(B11:P11)+1');await page.locator('#formula').press('Enter');
   await page.waitForFunction(()=>document.querySelector('[data-ref="Q11"] .value').textContent==='42,854,346.90');
   console.log('PASS: per-cell confirmed formula unlocking and recalculation');
-  const hash=await page.evaluate(()=>JSON.parse(document.querySelector('#report-data').textContent).hash);
-  const candidate=path.resolve(`storage/base-report-${hash}.json`);
+  const {hash,month}=await page.evaluate(()=>window.genstatReport.snapshot());
+  const candidate=path.resolve(`storage/base-report-${hash}-${month}.json`);
   if(fs.existsSync(candidate))throw Error('Existing base draft: refusing persistence test writes.');
   testDraft=candidate;await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#status').textContent==='Draft saved');
   await page.reload();assert.equal(await page.locator('[data-ref="Q11"] .value').textContent(),'42,854,346.90');

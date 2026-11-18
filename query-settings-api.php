@@ -6,19 +6,19 @@ $draftLock=null;
 try{
  if($_SERVER['REQUEST_METHOD']!=='POST')throw new QuerySettingsError('Use a protected POST request.');
  $raw=file_get_contents('php://input');if(strlen($raw)>150000)throw new QuerySettingsError('Request too large.');$body=json_decode($raw,true,512,JSON_THROW_ON_ERROR);
- if(empty($_SESSION['baseCsrf'])||!hash_equals($_SESSION['baseCsrf'],(string)($body['csrf']??'')))throw new QuerySettingsError('Session expired. Reload the report.');
- $l=base_report_layout();$s=$l['sheets'][0];if(!hash_equals($l['sha256'],(string)($body['hash']??'')))throw new QuerySettingsError('Source template changed. Reload before continuing.');
- $month=qs_month($s['name']);$action=$body['action']??'';
+ if(empty($_SESSION['baseCsrf'])||!base_report_valid_month($body['month']??null)||!is_string($body['csrf']??null)||!hash_equals(base_report_csrf($body['month']),$body['csrf']))throw new QuerySettingsError('Session expired. Reload the report.');
+ $month=qs_select_month(qs_available_months(),$body['month']);$l=base_report_layout();$l['reportMonth']=$month;$s=$l['sheets'][0];if(!hash_equals($l['sha256'],(string)($body['hash']??'')))throw new QuerySettingsError('Source template changed. Reload before continuing.');
+ $action=$body['action']??'';$draft=base_report_read_draft($l);if(($body['revision']??null)!==$draft['revision'])throw new QuerySettingsError('The saved draft changed. Reload before continuing.');
  $db=qs_db('writer');try{$records=qs_load($db);}finally{$db->close();}
  if($action==='metadata'){
   $area=qs_area_metadata();$rows=qs_rows($l);
   foreach($rows as $key=>&$row){$row['canonicalRowId']=qs_canonical_row_id($l,$key);$row['internalQueryKey']=qs_internal_query_key($l,$key,$records);$row['approvedSqlInputRow']=sql_replacement_row_approved($l,$key);$row['status']=isset($records[$key])?($records[$key]['enabled']?'Configured':'Disabled'):'Not Configured';$candidates=qs_targets($l,['rowKey'=>$key,'enabled'=>true]);
    foreach(['cells','protectedCells'] as $group)foreach($row[$group] as $ref=>&$cell){$cell['suggestedAreaId']=report_area_alias($cell['label'],$area['areas'],$area['areaMappings']);$cell['replacementEligible']=!empty($candidates[$ref]['formulaReplacement']);}unset($cell);
   }unset($row);
-  $db=qs_db('writer');try{$owner=qs_owner_hash();$source=$l['sha256'];$stmt=$db->prepare('SELECT operation_id,template_row_key,draft_revision,record_hash FROM genstat_query_apply_operations WHERE owner_hash=? AND source_hash=? ORDER BY sequence_id DESC LIMIT 1');$stmt->bind_param('ss',$owner,$source);$stmt->execute();$recoverable=$stmt->get_result()->fetch_assoc();}finally{$db->close();}
-  $draftPath=__DIR__.'/storage/base-report-'.$l['sha256'].'.json';$draftRevision=is_file($draftPath)?(int)json_decode(file_get_contents($draftPath),true,512,JSON_THROW_ON_ERROR)['revision']:0;
+  $db=qs_db('writer');try{$owner=qs_owner_hash($l);$source=$l['sha256'];$stmt=$db->prepare('SELECT operation_id,template_row_key,draft_revision,record_hash FROM genstat_query_apply_operations WHERE owner_hash=? AND source_hash=? ORDER BY sequence_id DESC LIMIT 1');$stmt->bind_param('ss',$owner,$source);$stmt->execute();$recoverable=$stmt->get_result()->fetch_assoc();}finally{$db->close();}
+  $draftRevision=$draft['revision'];
   if($recoverable&&((int)$recoverable['draft_revision']!==$draftRevision||qs_stable_hash($records[$recoverable['template_row_key']]??null)!==$recoverable['record_hash']))$recoverable=null;
-  $out=['rows'=>array_values($rows),'records'=>(object)$records,'month'=>$month,'sheet'=>$s['name'],'historyAvailable'=>true,'recoverableOperation'=>$recoverable]+$area;
+  $out=['rows'=>array_values($rows),'records'=>(object)$records,'month'=>$month,'monthLabel'=>base_report_month_label($month),'sheet'=>$s['name'],'historyAvailable'=>true,'recoverableOperation'=>$recoverable]+$area;
  }elseif(in_array($action,['inspect-result','preview-formula','auto-match','test'],true)){
   $input=qs_editor_input($l,$body['config']??[],$records);$key=$input['rowKey'];$config=$input+qs_calculation_settings($input);
   if(!empty($config['formulaEnabled'])&&qs_rows($l)[$key]['row']!==18)throw new QuerySettingsError('Report formulas support row 18 only.');
@@ -51,8 +51,8 @@ try{
  }elseif(in_array($action,['refresh-preview','apply','recover'],true)){
   $values=$body['values']??[];$formulas=$body['formulas']??[];$replacements=$body['sqlReplacements']??[];base_report_validate($l,$values,$formulas);sql_replacement_validate($l,$replacements,$formulas);
   // Same lock as Save Draft. No draft file is replaced by Apply & Save.
-  $path=__DIR__.'/storage/base-report-'.$l['sha256'].'.json';$draftLock=fopen($path.'.lock','c');if(!$draftLock||!flock($draftLock,$action==='apply'?LOCK_EX:LOCK_SH))throw new QuerySettingsError('Cannot lock the report draft.');
-  $draft=is_file($path)?json_decode(file_get_contents($path),true,512,JSON_THROW_ON_ERROR):['revision'=>0,'values'=>[],'formulas'=>[],'sqlReplacements'=>[]];
+  $path=base_report_draft_path($l);$draftLock=fopen($path.'.lock','c');if(!$draftLock||!flock($draftLock,$action==='apply'?LOCK_EX:LOCK_SH))throw new QuerySettingsError('Cannot lock the report draft.');
+  $draft=base_report_read_draft($l);
   if((int)($body['revision']??-1)!==(int)$draft['revision'])throw new QuerySettingsError('The saved draft changed. Reload before reviewing query values.');
   $overlayHash=qs_overlay_hash($values,$formulas,$replacements);
   if($action==='recover'){
@@ -65,7 +65,7 @@ try{
    $result=qs_tested_result($l,$config);$area=qs_area_metadata();$matched=qs_match($l,$config,$result,$area['areas'],$area['areaMappings']);$live=base_report_calculate($l,$values,$formulas,$replacements);$changes=[];$unchanged=[];
    foreach($matched['changes'] as $ref=>$change){$reviewed=qs_review_target($l,$change,$live,$values,$formulas,$replacements);if($reviewed['changeType']==='Unchanged')$unchanged[]=$reviewed;else $changes[$ref]=$reviewed;}
    $old=$records[$key]??null;$configChanged=!$old||qs_config_hash(qs_record_config($old))!==qs_config_hash($config)||$old['template_hash']!==$l['sha256'];$token=bin2hex(random_bytes(24));
-   $_SESSION['queryProposal']=['token'=>$token,'expires'=>time()+300,'source'=>$l['sha256'],'overlayHash'=>$overlayHash,'recordHash'=>qs_stable_hash($old),'areaHash'=>qs_stable_hash($area),'revision'=>(int)$draft['revision'],'fingerprint'=>qs_fingerprint($config,$l),'changes'=>$changes,'issues'=>$matched['errors'],'configurationChanged'=>$configChanged];
+   $_SESSION['queryProposal']=['token'=>$token,'month'=>$month,'expires'=>time()+300,'source'=>$l['sha256'],'overlayHash'=>$overlayHash,'recordHash'=>qs_stable_hash($old),'areaHash'=>qs_stable_hash($area),'revision'=>(int)$draft['revision'],'fingerprint'=>qs_fingerprint($config,$l),'changes'=>$changes,'issues'=>$matched['errors'],'configurationChanged'=>$configChanged];
    $out=['token'=>$token,'operationId'=>$token,'expiresAt'=>$_SESSION['queryProposal']['expires'],'changes'=>array_values($changes),'unchanged'=>$unchanged,'blockedTargets'=>$matched['blockedTargets'],'errors'=>$matched['errors'],'notes'=>$matched['notes'],'queriesExecuted'=>0,'testedRows'=>count($result['rows']),'month'=>$month,'configurationChanged'=>$configChanged];
   }else{
    if(($body['confirmed']??false)!==true)throw new QuerySettingsError('Confirm the reviewed changes before applying.');
@@ -74,7 +74,7 @@ try{
     if($receipt){$committed=json_decode($receipt['response_json'],true,512,JSON_THROW_ON_ERROR);if(!empty($committed['requiresFormulaConfirmation'])&&($body['confirmFormulaReplacement']??false)!==true)throw new QuerySettingsError('Explicitly confirm replacing the reviewed formulas.');$out=qs_restore_receipt($l,$receipt,$records,$body,$draft);if(!empty($out['requiresFormulaConfirmation'])&&($body['confirmFormulaReplacement']??false)!==true)throw new QuerySettingsError('Explicitly confirm replacing the reviewed formulas.');$db->commit();}
     else{
      sql_replacement_submission($l,$replacements,$draft['sqlReplacements']??[]);$proposal=$_SESSION['queryProposal']??null;
-     if(!$proposal||$proposal['expires']<time()||!hash_equals($proposal['token'],(string)($body['token']??''))||$operationId!==$proposal['token']||$proposal['source']!==$l['sha256']||$proposal['overlayHash']!==$overlayHash||$proposal['revision']!==(int)$draft['revision'])throw new QuerySettingsError('The preview is stale. Review proposed changes again.');
+     if(!$proposal||$proposal['expires']<time()||!hash_equals($proposal['token'],(string)($body['token']??''))||$operationId!==$proposal['token']||($proposal['month']??null)!==$month||$proposal['source']!==$l['sha256']||$proposal['overlayHash']!==$overlayHash||$proposal['revision']!==(int)$draft['revision'])throw new QuerySettingsError('The preview is stale. Review proposed changes again.');
      $config=qs_normalize($l,qs_editor_input($l,$body['config']??[],$records));$key=$config['rowKey'];
      if(!hash_equals($proposal['fingerprint'],qs_fingerprint($config,$l))||$proposal['recordHash']!==qs_stable_hash($records[$key]??null))throw new QuerySettingsError('Configuration changed after review. Review proposed changes again.');
      if($proposal['issues'])throw new QuerySettingsError('Resolve all review errors before applying.');if(!$proposal['changes']&&!$proposal['configurationChanged'])throw new QuerySettingsError('No applicable changes found.');
@@ -88,15 +88,15 @@ try{
      }
      // Validate the entire working result before touching configuration/history.
      $calculation=base_report_calculate($l,$values,$formulas,$replacements);$record=qs_save($l,$config,$expectedRevision,$db);
-     $out=['operationId'=>$operationId,'record'=>$record,'values'=>(object)$values,'formulas'=>(object)$formulas,'sqlReplacements'=>(object)$replacements,'calculation'=>$calculation,'requiresFormulaConfirmation'=>$hasFormula,'draftPending'=>true,'message'=>'Configuration saved and reviewed values applied to the current report. Use Save Draft to persist report values across sessions.'];
-     $owner=qs_owner_hash();$source=$l['sha256'];$revision=(int)$draft['revision'];$outputHash=qs_overlay_hash($values,$formulas,$replacements);$baselineHash=qs_overlay_hash($draft['values']??[],$draft['formulas']??[],(array)($draft['sqlReplacements']??[]));$configHash=qs_config_hash($config);$recordHash=qs_stable_hash($record);$areaHash=$proposal['areaHash'];$json=json_encode($out,JSON_THROW_ON_ERROR);$now=gmdate('Y-m-d H:i:s');
+     $out=['operationId'=>$operationId,'month'=>$month,'record'=>$record,'values'=>(object)$values,'formulas'=>(object)$formulas,'sqlReplacements'=>(object)$replacements,'calculation'=>$calculation,'requiresFormulaConfirmation'=>$hasFormula,'draftPending'=>true,'message'=>'Configuration saved and reviewed values applied to the current report. Use Save Draft to persist report values across sessions.'];
+     $owner=qs_owner_hash($l);$source=$l['sha256'];$revision=(int)$draft['revision'];$outputHash=qs_overlay_hash($values,$formulas,$replacements);$baselineHash=qs_overlay_hash($draft['values']??[],$draft['formulas']??[],(array)($draft['sqlReplacements']??[]));$configHash=qs_config_hash($config);$recordHash=qs_stable_hash($record);$areaHash=$proposal['areaHash'];$json=json_encode($out,JSON_THROW_ON_ERROR);$now=gmdate('Y-m-d H:i:s');
      $stmt=$db->prepare('INSERT INTO genstat_query_apply_operations(operation_id,owner_hash,template_row_key,source_hash,draft_revision,input_hash,output_hash,baseline_hash,config_hash,record_hash,area_hash,response_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)');$stmt->bind_param('ssssissssssss',$operationId,$owner,$key,$source,$revision,$overlayHash,$outputHash,$baselineHash,$configHash,$recordHash,$areaHash,$json,$now);$stmt->execute();$db->commit();
-     foreach($replacements as $ref=>$replacement){$_SESSION['sqlReplacementGrants'][$replacement['signature']]=true;unset($_SESSION['baseUnlocked'][$l['sha256']][$ref]);}unset($_SESSION['queryProposal']);
+     foreach($replacements as $ref=>$replacement){$_SESSION['sqlReplacementGrants'][$replacement['signature']]=true;unset($_SESSION['baseUnlocked'][base_report_scope($l)][$ref]);}unset($_SESSION['queryProposal']);
     }
    }catch(Throwable $e){try{$db->rollback();}catch(Throwable $ignored){}error_log('GENSTAT Apply & Save could not be confirmed; operation '.(preg_match('/^[a-f0-9]{48}$/D',$operationId)?$operationId:'invalid').'; '.get_class($e));throw $e;}finally{$db->close();}
   }
  }else throw new QuerySettingsError('Unknown SQL settings operation.');
  echo json_encode($out,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
-}catch(QuerySettingsError $e){http_response_code(400);echo json_encode(['error'=>$e->getMessage()]);}
+}catch(QuerySettingsError $e){http_response_code($e->getCode()===503?503:400);echo json_encode(['error'=>$e->getMessage()]);}
 catch(Throwable $e){error_log('GENSTAT query settings failed: '.get_class($e).' code '.$e->getCode());http_response_code(400);echo json_encode(['error'=>in_array($action??'',['apply','recover'],true)?'Apply & Save could not be confirmed. Retry the same operation or recover the last committed result before starting a new review.':'The SQL operation could not complete. Check query syntax, result columns and local setup; no configuration or report values were saved.']);}
 finally{if(is_resource($draftLock)){flock($draftLock,LOCK_UN);fclose($draftLock);}}

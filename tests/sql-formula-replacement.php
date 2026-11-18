@@ -12,6 +12,13 @@ $disabled=$config;$disabled['allowFormulaReplacement']=false;$disabled=qs_normal
 replacement_check(isset(qs_targets($l,$disabled)['F18']),'Approved row includes F18 independently of the legacy flag');
 replacement_check(!isset(qs_rows($l)['genstat-base/Jul26/A15']),'Formula-only calculated rows remain excluded');
 $record=sql_replacement_issue($l,'F18','3776446.00',$config,1);$calc=base_report_calculate($l,['B11'=>'24850653.84'],[],['F18'=>$record]);
+$legacyRecord=$record;unset($legacyRecord['reportMonth']);$legacyRecord['signature']=sql_replacement_signature($legacyRecord);
+sql_replacement_validate($l,['F18'=>$legacyRecord]);
+$august=$l;$august['reportMonth']='202608';
+foreach([$record,$legacyRecord] as $julyRecord){
+ try{sql_replacement_validate($august,['F18'=>$julyRecord]);throw new RuntimeException('July signature accepted in August');}
+ catch(InvalidArgumentException $e){replacement_check(str_contains($e->getMessage(),'different reporting month'),'July replacements stay in July, including legacy signatures');}
+}
 replacement_check($calc['cells']['F18']['value']===3776446.0&&$calc['cells']['Q18']['display']==='38,724,209.00','Approved numeric overlay replaces F18 and recalculates Q18');
 replacement_check($calc['cells']['B11']['value']===24850653.84,'Manual input outside the SQL row preserved');
 replacement_check($record['originalFormula']==='=3011664+767072'&&$l['sheets'][0]['cells']['F18']['formula']==='3011664+767072','Original formula retained in signed provenance and untouched template metadata');

@@ -97,8 +97,7 @@ function apply_formula_export(array &$zip,DOMDocument $doc,array $formulas,array
  }
  // Old dependency chains cannot describe newly inserted/edited formulas.
  // Remove the optional chain and its package references so Excel rebuilds it.
- unset($zip['xl/calcChain.xml']);
- foreach(['xl/_rels/workbook.xml.rels','[Content_Types].xml'] as $part){$d=xml_doc(zip_text($zip,$part));foreach(iterator_to_array($d->documentElement->childNodes) as $n)if($n instanceof DOMElement&&(str_ends_with($n->getAttribute('Type'),'/calcChain')||$n->getAttribute('PartName')==='/xl/calcChain.xml'))$d->documentElement->removeChild($n);$changes[$part]=$d->saveXML();}
+ xlsx_remove_calc_chain($zip,$changes);
 }
 function formula_api_payload(array $draft): array {
  $sheet=report_sheet();$draft['formulas']=$draft['formulas']??(object)[];$draft['authorization']=formula_auth_status();

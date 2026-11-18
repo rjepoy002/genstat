@@ -20,3 +20,15 @@ function zip_write(array $zip,array $changes): string {
 }
 function xml_doc(string $xml): DOMDocument {$d=new DOMDocument();$d->preserveWhiteSpace=true;if(!$d->loadXML($xml,LIBXML_NONET)) throw new RuntimeException('Invalid XML');return $d;}
 function xml_path(DOMDocument $d): DOMXPath {$x=new DOMXPath($d);$x->registerNamespace('s','http://schemas.openxmlformats.org/spreadsheetml/2006/main');return $x;}
+
+function write_cell_value(DOMDocument $doc,DOMElement $cell,string $value): void {
+ foreach(iterator_to_array($cell->childNodes) as $n)if($n instanceof DOMElement&&in_array($n->localName,['f','v','is']))$cell->removeChild($n);
+ $cell->removeAttribute('t');$ns=$doc->documentElement->namespaceURI;
+ if($value==='')return;
+ if(is_numeric($value)){$v=$doc->createElementNS($ns,'v');$v->appendChild($doc->createTextNode($value));$cell->appendChild($v);}
+ else{$cell->setAttribute('t','inlineStr');$is=$doc->createElementNS($ns,'is');$t=$doc->createElementNS($ns,'t');$t->setAttributeNS('http://www.w3.org/XML/1998/namespace','xml:space','preserve');$t->appendChild($doc->createTextNode($value));$is->appendChild($t);$cell->appendChild($is);}
+}
+function xlsx_remove_calc_chain(array &$zip,array &$changes): void {
+ unset($zip['xl/calcChain.xml']);
+ foreach(['xl/_rels/workbook.xml.rels','[Content_Types].xml'] as $part){$d=xml_doc(zip_text($zip,$part));foreach(iterator_to_array($d->documentElement->childNodes) as $n)if($n instanceof DOMElement&&(str_ends_with($n->getAttribute('Type'),'/calcChain')||$n->getAttribute('PartName')==='/xl/calcChain.xml'))$d->documentElement->removeChild($n);$changes[$part]=$d->saveXML();}
+}

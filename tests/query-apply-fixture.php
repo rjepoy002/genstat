@@ -14,7 +14,7 @@ if($action==='setup'){
  $db->query("CREATE USER '$user'@'127.0.0.1' IDENTIFIED BY '$password'");foreach(['genstat_query_definitions','genstat_row_query_mappings','genstat_query_history'] as $table)$db->query("GRANT SELECT, INSERT, UPDATE ON `$schema`.`$table` TO '$user'@'127.0.0.1'");$db->query("GRANT SELECT, INSERT ON `$schema`.`genstat_query_apply_operations` TO '$user'@'127.0.0.1'");
  $cfg=require __DIR__.'/../config/query-settings.local.php';$cfg['writer']=['host'=>'127.0.0.1','port'=>$c['port'],'database'=>$schema,'user'=>$user,'password'=>$password];if(!is_dir($root.'/config'))mkdir($root.'/config');file_put_contents($root.'/config/query-settings.local.php',"<?php\nreturn ".var_export($cfg,true).";\n");
  $ids=[1,8,9,10,12,2,5,15,4,3,6,19,16,18,11];$bindings=[];foreach($ids as $i=>$id)$bindings[chr(66+$i).'11']=['areaId'=>(string)$id,'sacode'=>''];
- $sql='WITH params AS (SELECT :ReportMonth AS ReportMonth) SELECT AreaID, AreaName, 1200838.00 AS Sales_KWH, 455.00 AS KWH_Diff, 36.00 AS Total_Cancelled_KWH, 1201293.00 AS TotalKWhSold FROM area_master WHERE CAST((SELECT ReportMonth FROM params) AS UNSIGNED)=202607 AND AreaID IN ('.implode(',',$ids).')';$queryKey='legacy_existing';$now='2026-01-01 00:00:00';
+ $sql='WITH params AS (SELECT :ReportMonth AS ReportMonth) SELECT AreaID, AreaName, 1200838.00 + CAST(RIGHT((SELECT ReportMonth FROM params),2) AS UNSIGNED) - 7 AS Sales_KWH, 455.00 AS KWH_Diff, 36.00 AS Total_Cancelled_KWH, 1201293.00 AS TotalKWhSold FROM area_master WHERE AreaID IN ('.implode(',',$ids).')';$queryKey='legacy_existing';$now='2026-01-01 00:00:00';
  $stmt=$db->prepare("INSERT INTO genstat_query_definitions(query_key,sql_text,area_column,sacode_column,created_at,updated_at) VALUES(?,?,'AreaID','',?,?)");$stmt->bind_param('ssss',$queryKey,$sql,$now,$now);$stmt->execute();$id=$db->insert_id;$key='genstat-base/Jul26/A11';$hash=hash_file('sha256',__DIR__.'/../excel-files/reference/GENSTAT_BASE.xlsx');$label='a.)  NPC/PPGI/DELTA P/DMCI';$json=json_encode($bindings,JSON_THROW_ON_ERROR);
  $stmt=$db->prepare("INSERT INTO genstat_row_query_mappings(template_row_key,template_hash,row_label,query_definition_id,value_column,bindings_json,excluded_json,enabled,created_at,updated_at) VALUES(?,?,?,?,'TotalKWhSold',?,'[]',0,?,?)");$stmt->bind_param('sssisss',$key,$hash,$label,$id,$json,$now,$now);$stmt->execute();echo "Isolated writer database and disabled legacy fixture created. Reader account/source tables unchanged.\n";exit;
 }
@@ -22,6 +22,35 @@ $state=json_decode(file_get_contents($root.'/fixture-state.json'),true,512,JSON_
  $unchanged=fixture_production_hash($db,$c['database'])===$state['productionHash'];$db->query("DROP USER IF EXISTS '$user'@'127.0.0.1'");$db->query("DROP DATABASE IF EXISTS `$schema`");if(!$unchanged)throw new RuntimeException('Production settings changed during the test; fixture did not write them.');echo "Isolated schema/account removed; production configurations/history/receipts unchanged.\n";exit;
 }
 $db->select_db($schema);
+if($action==='period-export'){
+ require $root.'/lib/workbook-storage.php';
+ $zip=workbook_validate($root.'/period-export.xlsx');
+ $xml=xml_path(xml_doc(zip_text($zip,'xl/worksheets/sheet1.xml')));
+ foreach(['A6'=>'For the Month of September 2027','G18'=>'1201331','F18'=>'1201331'] as $ref=>$expected){
+  $actual=$xml->evaluate('string(//s:c[@r="'.$ref.'"]/*[1])');
+  if($actual!==$expected)throw new RuntimeException('Unexpected exported cell '.$ref.': '.$actual);
+ }
+ foreach([16,19,21,34,37,46,47] as $row){
+  if($xml->evaluate('string(//s:row[@r="'.$row.'"]/@hidden)')!=='1')throw new RuntimeException('Export exposed ADJ row '.$row.'.');
+ }
+ if($xml->evaluate('string(//s:row[@r="25"]/@hidden)')==='1')throw new RuntimeException('Export hid Bill Adjustment.');
+ if($xml->evaluate('count(//s:c[@r="F18"]/s:f)')!==0.0||$xml->evaluate('string(//s:c[@r="Q18"]/s:v)')!=='18019965'||$xml->evaluate('count(//s:c[@r="Q18"]/s:f)')!==1.0)
+  throw new RuntimeException('Exported calculation caches did not match the loaded period.');
+ foreach(str_split('BCDEFGHIJKLMNOP') as $area){
+  $cell='//s:c[@r="'.$area.'18"]';
+  if($xml->evaluate('string('.$cell.'/s:v)')!=='1201331'||$xml->evaluate('count('.$cell.'/s:f)')!==0.0)
+   throw new RuntimeException('Expected a numeric SQL result in '.$area.'18.');
+ }
+ echo "PASS: period export package, heading, preview value, protected formula and hidden row verified.\n";exit;
+}
+if($action==='total-unavailable'){
+ $db->query("UPDATE genstat_query_definitions q JOIN genstat_row_query_mappings m ON m.query_definition_id=q.id SET q.sql_text='SELECT :ReportMonth AS ReportMonth, AreaID FROM area_master WHERE AreaID IS NULL' WHERE m.template_row_key='genstat-base/Jul26/A18'");
+ exit;
+}
+if($action==='reader-offline'){
+ $path=$root.'/config/query-settings.local.php';$cfg=require $path;$cfg['reader']['host']='127.0.0.1';$cfg['reader']['port']=1;
+ file_put_contents($path,"<?php\nreturn ".var_export($cfg,true).";\n");exit;
+}
 if(in_array($action,['proposal-fields','legacy-proposal'],true)){$session=(string)($argv[3]??'');if(!preg_match('/^[a-zA-Z0-9,-]{16,128}$/D',$session))throw new RuntimeException('Invalid isolated session.');session_save_path($root.'/storage/sessions');session_id($session);session_start();if(!isset($_SESSION['queryProposal']))throw new RuntimeException('No proposal.');if($action==='legacy-proposal'){$_SESSION['queryProposal']['config']=['obsolete'=>'must not authorize anything'];$_SESSION['queryProposal']['mappingRevision']=999999;}else echo json_encode(array_keys($_SESSION['queryProposal']),JSON_THROW_ON_ERROR);session_write_close();exit;}
 if($action==='expire-proposal'){$session=(string)($argv[3]??'');if(!preg_match('/^[a-zA-Z0-9,-]{16,128}$/D',$session))throw new RuntimeException('Invalid fixture session.');session_save_path($root.'/storage/sessions');session_id($session);session_start();if(!isset($_SESSION['queryProposal']))throw new RuntimeException('No isolated proposal to expire.');$_SESSION['queryProposal']['expires']=time()-1;session_write_close();exit;}
 if($action==='stats'){

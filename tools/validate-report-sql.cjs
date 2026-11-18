@@ -15,7 +15,7 @@ function validate(input){
   if(c===';'){if(sql.slice(i+1).trim())throw Error('Multiple SQL statements are not permitted.');i++;continue;}
   prepared+=c;plain+=c;i++;
  }
- if(!params.length)throw Error('The query must bind :ReportMonth to the selected worksheet month.');
+ if(!params.length)throw Error('The query must bind :ReportMonth to the selected reporting month. A fixed month value will not follow the selection.');
  if(/\b(INTO|OUTFILE|DUMPFILE|LOCK|UNLOCK|PROCEDURE|SQL_CALC_FOUND_ROWS|HIGH_PRIORITY|STRAIGHT_JOIN|FOR|RETURNING)\b/i.test(plain))throw Error('File access, locking clauses and unsafe SELECT options are not permitted.');
  const parser=new Parser();let ast;
  try{ast=parser.astify(sql.trim().replace(/;\s*$/,''),{database:'MySQL'});}catch{throw Error('The SQL parser could not validate this MySQL SELECT/CTE.');}

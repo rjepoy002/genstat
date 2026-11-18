@@ -34,19 +34,19 @@ function qs_editor_input(array $l,array $input,array $records): array {
  foreach($records as $otherKey=>$other)if($otherKey!==$key&&$other['query_key']===$input['queryKey']&&($other['sql_text']!==($input['sql']??'')||$other['area_column']!==trim((string)($input['areaColumn']??''))||$other['sacode_column']!==trim((string)($input['sacodeColumn']??'')))){$input['queryKey']=substr(qs_canonical_row_id($l,$key),0,55).'_'.substr(hash('sha256',($input['sql']??'').'|'.trim((string)($input['areaColumn']??'')).'|'.trim((string)($input['sacodeColumn']??''))),0,12);break;}
  $input['enabled']=true;$input['allowFormulaReplacement']=sql_replacement_row_approved($l,$key);return $input;
 }
-function qs_result_key(array $l,string $sql): string {return hash('sha256',json_encode([$l['sha256'],qs_month($l['sheets'][0]['name']),$sql],JSON_THROW_ON_ERROR));}
+function qs_result_key(array $l,string $sql): string {return hash('sha256',json_encode([$l['sha256'],base_report_month($l),$sql],JSON_THROW_ON_ERROR));}
 function qs_tested_result(array $l,array $config): array {
  $tested=$_SESSION['queryResult']??null;
  if(!$tested||$tested['key']!==qs_result_key($l,$config['sql'])||($tested['rowKey']??'')!==$config['rowKey']||$tested['expires']<time())throw new QuerySettingsError('Test the SQL query first. The tested query must match the selected reporting month.');
  if($tested['result']['truncated'])throw new QuerySettingsError('Incomplete query results cannot be reviewed.');return $tested['result'];
 }
-function qs_owner_hash(): string {return hash_hmac('sha256',session_id(),sql_replacement_secret());}
+function qs_owner_hash(array $l): string {$month=base_report_month($l);return hash_hmac('sha256',session_id().($month===BASE_REPORT_LEGACY_MONTH?'':':'.$month),sql_replacement_secret());}
 function qs_receipt(mysqli $db,string $operationId): ?array {
  if(!preg_match('/^[a-f0-9]{48}$/D',$operationId))throw new QuerySettingsError('Invalid Apply & Save operation identifier.');
  $stmt=$db->prepare('SELECT * FROM genstat_query_apply_operations WHERE operation_id=?');$stmt->bind_param('s',$operationId);$stmt->execute();return $stmt->get_result()->fetch_assoc();
 }
 function qs_restore_receipt(array $l,array $receipt,array $records,array $body,array $draft,bool $recovery=false): array {
- $owner=qs_owner_hash();if(!hash_equals($receipt['owner_hash'],$owner)||$receipt['source_hash']!==$l['sha256']||(int)$receipt['draft_revision']!==(int)$draft['revision'])throw new QuerySettingsError('This operation cannot be recovered for the current session, template or draft version.');
+ $owner=qs_owner_hash($l);if(!hash_equals($receipt['owner_hash'],$owner)||$receipt['source_hash']!==$l['sha256']||(int)$receipt['draft_revision']!==(int)$draft['revision'])throw new QuerySettingsError('This operation cannot be recovered for the current session, template or draft version.');
  $record=$records[$receipt['template_row_key']]??null;
  if(!$record||qs_stable_hash($record)!==$receipt['record_hash'])throw new QuerySettingsError('The saved configuration changed after this operation. Review again.');
  if(qs_stable_hash(qs_area_metadata())!==$receipt['area_hash'])throw new QuerySettingsError('Area mappings changed after this operation. Review again.');
@@ -54,8 +54,8 @@ function qs_restore_receipt(array $l,array $receipt,array $records,array $body,a
  $accepted=[$receipt['input_hash'],$receipt['output_hash']];if($recovery)$accepted[]=$receipt['baseline_hash'];
  if(!in_array($hash,$accepted,true))throw new QuerySettingsError('The report has other edits. Recover into an unchanged draft or review again; current edits were not replaced.');
  if(!$recovery){$config=qs_normalize($l,qs_editor_input($l,$body['config']??[],$records));if(!hash_equals($receipt['config_hash'],qs_config_hash($config)))throw new QuerySettingsError('The submitted configuration differs from the committed operation.');}
- $out=json_decode($receipt['response_json'],true,512,JSON_THROW_ON_ERROR);base_report_validate($l,$out['values'],$out['formulas']);qs_normalize($l,qs_record_config($record));sql_replacement_validate($l,$out['sqlReplacements'],$out['formulas']);
- foreach($out['sqlReplacements'] as $ref=>$replacement){$_SESSION['sqlReplacementGrants'][$replacement['signature']]=true;unset($_SESSION['baseUnlocked'][$l['sha256']][$ref]);}
+ $out=json_decode($receipt['response_json'],true,512,JSON_THROW_ON_ERROR);if(($out['month']??BASE_REPORT_LEGACY_MONTH)!==base_report_month($l))throw new QuerySettingsError('This operation belongs to a different reporting month.');base_report_validate($l,$out['values'],$out['formulas']);qs_normalize($l,qs_record_config($record));sql_replacement_validate($l,$out['sqlReplacements'],$out['formulas']);
+ foreach($out['sqlReplacements'] as $ref=>$replacement){$_SESSION['sqlReplacementGrants'][$replacement['signature']]=true;unset($_SESSION['baseUnlocked'][base_report_scope($l)][$ref]);}
  $out['recovered']=true;return $out;
 }
 function qs_archive_version(mysqli $db,array $record,string $now): void {

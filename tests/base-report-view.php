@@ -5,9 +5,11 @@ require_once __DIR__.'/../lib/base-report-view.php';
 function view_check(bool $ok,string $message): void{if(!$ok)throw new RuntimeException($message);echo 'PASS: '.$message.PHP_EOL;}
 $l=base_report_layout();$s=$l['sheets'][0];$source=build_layout(__DIR__.'/../excel-files/reference/GENSTAT_BASE.xlsx');$hidden=[];
 for($r=$l['report']['firstRow'];$r<=$l['report']['lastRow'];$r++)if(base_report_row_hidden($s['cells']['A'.$r]['value']??''))$hidden[]=$r;
-view_check($hidden===[19,34,37,46,47],'Only requested Excel rows 19, 34, 37, 46, 47 hidden');
-foreach(base_report_hidden_descriptions() as $label)view_check(base_report_row_hidden('  '.strtoupper(str_replace(' ','   ',$label)).'  '),'Case and repeated whitespace normalized: '.$label);
-view_check(!base_report_row_hidden('Total KWH Purchased - ADJ')&&!base_report_row_hidden('Rate of System Loss')&&!base_report_row_hidden('Rate of System Loss -ADJ extra'),'Similar but nonmatching descriptions remain visible');
+view_check($hidden===[16,19,21,34,37,46,47],'All source rows containing standalone ADJ are hidden');
+foreach(['Total KWH Purchased - ADJ','Rate of System Loss -ADJ extra','Sales (adj)','ADJ only'] as $label)
+ view_check(base_report_row_hidden($label),'Standalone token matched: '.$label);
+foreach(['Bill Adjustment (Previous months)','Rate of System Loss','ADJ2','preAdj','ADJ_code'] as $label)
+ view_check(!base_report_row_hidden($label),'Nonmatching label stays visible: '.$label);
 view_check(expanded_formulas($s)===expanded_formulas($source['sheets'][0]),'All 402 formulas intact, including hidden rows');
 view_check(count(array_filter($s['cells'],fn($c)=>$c['databaseInput']))===96,'All 96 database-input classifications retained');
 foreach($source['sheets'][0]['cells'] as $ref=>$cell){view_check($s['cells'][$ref]['value']===$cell['value']&&$s['cells'][$ref]['formula']===$cell['formula']&&$s['cells'][$ref]['formulaAttributes']===$cell['formulaAttributes'],'Underlying value, formula and attributes unchanged: '.$ref);}

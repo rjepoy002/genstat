@@ -22,13 +22,6 @@ function editing_layout(): array {
  $all['sheets']=array_merge([$sheet],array_values(array_filter($all['sheets'],fn($s)=>$s['name']!==$sheet['name'])));
  return $all;
 }
-function write_cell_value(DOMDocument $doc,DOMElement $cell,string $value): void {
- foreach(iterator_to_array($cell->childNodes) as $n)if($n instanceof DOMElement&&in_array($n->localName,['f','v','is']))$cell->removeChild($n);
- $cell->removeAttribute('t');$ns=$doc->documentElement->namespaceURI;
- if($value==='')return;
- if(is_numeric($value)){$v=$doc->createElementNS($ns,'v');$v->appendChild($doc->createTextNode($value));$cell->appendChild($v);}
- else{$cell->setAttribute('t','inlineStr');$is=$doc->createElementNS($ns,'is');$t=$doc->createElementNS($ns,'t');$t->setAttributeNS('http://www.w3.org/XML/1998/namespace','xml:space','preserve');$t->appendChild($doc->createTextNode($value));$is->appendChild($t);$cell->appendChild($is);}
-}
 function template_guard(): void {
  static $lock=null;
  if($lock===null){$lock=fopen(ROOT.'/storage/template.lock','c');if(!$lock||!flock($lock,LOCK_EX))throw new RuntimeException('Cannot acquire worksheet lock.');}

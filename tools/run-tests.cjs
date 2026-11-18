@@ -27,7 +27,7 @@ function startCompactServer(fixture){
   });
   return {server,ready,log:()=>output};
 }
-function prepareCompact(fixture,file){
+function prepareCompact(fixture){
   copyDir(path.join(root,'partials'),path.join(fixture,'partials'));
   for(const name of ['base-report.php','query-settings-api.php'])
     fs.copyFileSync(path.join(root,name),path.join(fixture,name));
@@ -43,10 +43,8 @@ if (parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) === '/query-settings-api.ph
 }
 return false;
 `);
-  if(!['tests/base-report-browser.cjs','tests/base-report-compact.cjs'].includes(file)){
-    fs.copyFileSync(path.join(root,'config/query-settings.local.php'),path.join(fixture,'config/query-settings.local.php'));
-    fs.symlinkSync(path.join(root,'node_modules'),path.join(fixture,'node_modules'),'junction');
-  }
+  fs.copyFileSync(path.join(root,'config/query-settings.local.php'),path.join(fixture,'config/query-settings.local.php'));
+  fs.symlinkSync(path.join(root,'node_modules'),path.join(fixture,'node_modules'),'junction');
 }
 async function main(){
   const args=process.argv.slice(2);let files=args.filter(x=>!x.startsWith('--'));const group=args.find(x=>x.startsWith('--group='));if(!files.length)files=group==='--group=unit'?unit:group==='--group=browser'?browser:unit.concat(browser);
@@ -59,11 +57,11 @@ async function main(){
       const env={...process.env};
       if(compact.includes(file)){
         fixture=sandbox(file);
-        prepareCompact(fixture,file);
+        prepareCompact(fixture);
         const hosted=startCompactServer(fixture);
         server=hosted.server;
         serverLog=hosted.log;
-        env.GENSTAT_TEST_COMPACT_URL=(await hosted.ready)+'/base-report.php';
+        env.GENSTAT_TEST_COMPACT_URL=(await hosted.ready)+'/base-report.php?month=202607';
       }
       const executable=file.endsWith('.php')?phpBinary:process.execPath;
       const result=await new Promise(resolve=>{

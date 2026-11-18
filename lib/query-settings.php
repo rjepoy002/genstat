@@ -23,6 +23,27 @@ function qs_db(string $role): mysqli {
  }
  return $db;
 }
+function qs_available_months(): array {
+ try{
+  $db=qs_db('reader');
+  try{$months=array_column($db->query("SELECT DISTINCT BillMonth FROM overallsalessummary WHERE BillMonth REGEXP '^[0-9]{6}$'")->fetch_all(MYSQLI_ASSOC),'BillMonth');}
+  finally{$db->close();}
+ }catch(Throwable $e){throw new QuerySettingsError('Reporting months are unavailable. Check the reporting database connection and try again.',503,$e);}
+ return qs_sorted_months($months);
+}
+function qs_sorted_months(array $months): array {
+ $months=array_map(fn($month)=>is_int($month)?(string)$month:$month,$months);
+ $months=array_values(array_unique(array_filter($months,'base_report_valid_month')));
+ rsort($months,SORT_STRING);return $months;
+}
+function qs_select_month(array $available,$requested,$previous=null): string {
+ if($requested!==null){
+  if(!base_report_valid_month($requested)||!in_array($requested,$available,true))throw new QuerySettingsError('Select an available reporting month.');
+  return $requested;
+ }
+ if(!$available)throw new QuerySettingsError('No reporting months are available.',503);
+ return in_array($previous,$available,true)?$previous:$available[0];
+}
 function qs_month(string $worksheet): string {
  if(!preg_match('/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(\d{2})$/D',$worksheet,$m))throw new QuerySettingsError('The selected worksheet has no valid reporting month.');
  $month=array_search($m[1],['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],true)+1;return '20'.$m[2].sprintf('%02d',$month);
@@ -30,7 +51,10 @@ function qs_month(string $worksheet): string {
 function qs_rows(array $l): array {
  $s=$l['sheets'][0];$out=[];$headers=report_area_headers($l);$formulas=expanded_formulas($s);
  for($r=$l['report']['firstRow']+2;$r<=$l['report']['lastRow'];$r++){
-  $label=$s['cells']['A'.$r]['value']??'';if(!trim($label)||base_report_row_hidden($label))continue;$cells=[];$protected=[];
+  $label=$s['cells']['A'.$r]['value']??'';
+  // The comparison subtotal is outside SQL input policy even where it has numeric cells.
+  if(!trim($label)||preg_match('~^Total\s+KWH\s+Sold\s*\(\s*w/o\s+Bill\s+ADJ\s*\)\s*$~i',trim($label)))continue;
+  $cells=[];$protected=[];
   // Only actual area columns; monthly/cumulative/historical totals are never query targets.
   foreach($headers as $c=>$header){$ref=col_name($c).$r;$cell=$s['cells'][$ref]??worksheet_cell($s,$ref);$meta=$header+['classification'=>$cell['classification']];if($cell['editable']&&$cell['formula']===null&&!$cell['formulaProtected'])$cells[$ref]=$meta;else $protected[$ref]=$meta+['formula'=>$formulas[$ref]??null,'reason'=>($cell['formulaProtected']||$cell['formula']!==null)?'Excel formula is protected':((merged_owner($s['merges'],$ref)??$ref)!==$ref?'Covered merged-cell placeholder':'Non-writable source cell')];}
   if($cells){$key='genstat-base/'.$s['name'].'/A'.$r;$out[$key]=['key'=>$key,'label'=>$label,'row'=>$r,'sheet'=>$s['name'],'cells'=>$cells,'protectedCells'=>$protected];}
@@ -92,7 +116,7 @@ function qs_normalize(array $l,array $input): array {
 
  ksort($out['bindings']);sort($out['excluded']);return $out;
 }
-function qs_fingerprint(array $config,array $l): string{return hash('sha256',json_encode([$l['sha256'],qs_month($l['sheets'][0]['name']),$config],JSON_THROW_ON_ERROR));}
+function qs_fingerprint(array $config,array $l): string{return hash('sha256',json_encode([$l['sha256'],base_report_month($l),$config],JSON_THROW_ON_ERROR));}
 function qs_target_comparison(array $l,string $ref,string $proposed,$before=null): array {
  $cell=$l['sheets'][0]['cells'][$ref];if(func_num_args()<4)$before=$cell['value'];$current=$cell;$current['value']=(string)$before;$current['type']=is_numeric($before)?'n':'str';$after=$cell;$after['value']=$proposed;$after['type']='n';
  $difference=is_numeric($before)?(float)$proposed-(float)$before:null;
@@ -141,6 +165,52 @@ function qs_area_metadata(): array {
 }
 function qs_record_config(array $record): array {
  return ['rowKey'=>$record['template_row_key'],'queryKey'=>$record['query_key'],'sql'=>$record['sql_text'],'areaColumn'=>$record['area_column'],'sacodeColumn'=>$record['sacode_column'],'valueColumn'=>$record['value_column'],'bindings'=>$record['bindings'],'excluded'=>$record['excluded'],'enabled'=>(bool)$record['enabled'],'allowFormulaReplacement'=>(bool)($record['allow_formula_replacement']??false)]+qs_calculation_settings(json_decode($record['calculation_settings_json']??'{}',true,512,JSON_THROW_ON_ERROR)??[]);
+}
+function qs_period_preview(array $layout,bool $onlyTotal=false): array {
+ try{
+  $db=qs_db('writer');
+  try{$records=qs_load($db);}finally{$db->close();}
+ }catch(mysqli_sql_exception|QuerySettingsError $e){
+  throw new QuerySettingsError('SQL reporting configuration is unavailable.',503,$e);
+ }
+ $area=null;$values=[];$total=[];$results=[];
+ $rows=qs_rows($layout);$month=base_report_month($layout);
+ foreach($records as $key=>$record){
+  if(!$record['enabled']||!isset($rows[$key]))continue;
+  $isTotal=sql_replacement_row_approved($layout,$key);
+  if($onlyTotal&&!$isTotal)continue;
+  if($isTotal)$total=array_fill_keys(array_keys(qs_targets($layout,qs_record_config($record))),null);
+  try{
+   if($record['template_hash']!==$layout['sha256'])throw new QuerySettingsError('Review the saved row configuration for the current reference workbook.');
+   $config=qs_normalize($layout,qs_record_config($record));
+   // A fixed period can override a valid placeholder elsewhere in the query.
+   if(preg_match('/\b[12][0-9]{3}(0[1-9]|1[0-2])\b/',$config['sql']))
+    throw new QuerySettingsError('Review the fixed reporting month in SQL Query Settings.');
+   $result=$results[$config['sql']]??=qs_execute($config['sql'],$month);
+   foreach($result['rows'] as $row){
+    foreach($row as $column=>$value){
+     if(in_array(strtolower($column),['billmonth','reportmonth'],true)&&(string)$value!==$month)
+      throw new QuerySettingsError('The query returned a different reporting month.');
+    }
+   }
+   $area??=qs_area_metadata();
+   $match=qs_match($layout,$config,$result,$area['areas'],$area['areaMappings']);
+   if($match['errors'])throw new QuerySettingsError($match['errors'][0]);
+   foreach($match['changes'] as $ref=>$change){
+    if($isTotal)$total[$ref]=$change['value'];
+    else $values[$ref]=$change['value'];
+   }
+  }catch(mysqli_sql_exception|QuerySettingsError $e){
+   if(!$isTotal){
+    if($e instanceof QuerySettingsError)throw new QuerySettingsError($rows[$key]['label'].': '.$e->getMessage(),0,$e);
+    throw $e;
+   }
+  }
+ }
+ return ['values'=>$values,'total'=>$total];
+}
+function qs_period_preview_token(array $layout,array $values,array $total): string {
+ return hash_hmac('sha256',base_report_scope($layout).':'.qs_stable_hash([$values,$total]),$_SESSION['baseCsrf']);
 }
 function qs_save(array $l,array $config,int $expectedRevision,?mysqli $connection=null): array {
  $owned=$connection===null;$db=$connection??qs_db('writer');$now=gmdate('Y-m-d H:i:s');$key=$config['rowKey'];

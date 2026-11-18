@@ -16,7 +16,8 @@
    <section class="sql-card space-y-3" aria-labelledby="sql-editor-title">
     <div class="flex flex-wrap items-center justify-between gap-2"><h3 id="sql-editor-title" class="sql-card-title">SQL Query Editor</h3><span class="rounded-full bg-teal-50 px-3 py-1 text-xs font-medium text-teal-800">Read-only execution</span></div>
     <label class="settings-label">Approved MySQL query<textarea id="sql-editor" class="settings-input sql-editor" rows="8" spellcheck="false" placeholder="WITH params AS (SELECT :ReportMonth AS ReportMonth)&#10;SELECT ..."></textarea></label>
-    <p class="sql-help">Use :ReportMonth for the selected worksheet month. Comments, side effects and unapproved functions or tables are rejected.</p>
+    <p class="sql-help">Use :ReportMonth for the selected reporting month. Comments, side effects and unapproved functions or tables are rejected.</p>
+    <p id="sql-month-warning" class="sql-help" role="status" hidden>SQL contains a value that looks like a fixed reporting month. Verify the query follows the selected month. SQL text is preserved as entered.</p>
   <div class="sql-actions flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3"><button id="sql-test" type="button" class="sql-primary">Test Query</button><span id="sql-duration" class="ml-auto text-xs text-slate-500"></span><p class="sql-help w-full">Testing does not save configuration. Configuration is saved automatically when reviewed values are successfully applied.</p></div>
    </section>
    <section class="sql-card space-y-3" aria-labelledby="sql-columns-title">

@@ -19,12 +19,13 @@ function sql_replacement_cell_allowed(array $sheet,string $ref): bool {
 function sql_replacement_row_approved(array $layout,string $rowKey): bool {
  $sheet=$layout['sheets'][0];$key='genstat-base/'.$sheet['name'].'/A18';
  return $rowKey===$key&&trim((string)($sheet['cells']['A18']['value']??''))==='Total KWH Sold'
-  &&!base_report_row_hidden((string)$sheet['cells']['A18']['value'])&&range_contains($layout['report']['range'],'A18');
+  &&range_contains($layout['report']['range'],'A18');
 }
 function sql_replacement_validate(array $layout,array $replacements,array $formulas=[]): void {
  $sheet=$layout['sheets'][0];$source=expanded_formulas($sheet);
  foreach($replacements as $ref=>$record){
   if(!is_array($record)||!isset($source[$ref])||!range_contains($layout['report']['range'],$ref)||!sql_replacement_cell_allowed($sheet,$ref))throw new InvalidArgumentException('Invalid SQL formula replacement: '.$ref);
+  if(($record['reportMonth']??BASE_REPORT_LEGACY_MONTH)!==base_report_month($layout))throw new InvalidArgumentException('SQL replacement belongs to a different reporting month: '.$ref);
   if(($record['sourceHash']??'')!==$layout['sha256']||($record['sheet']??'')!==$sheet['name']||($record['ref']??'')!==$ref||($record['originalFormula']??null)!==$source[$ref]||!is_string($record['value']??null)||!is_numeric($record['value'])||!is_finite((float)$record['value']))throw new InvalidArgumentException('SQL replacement provenance is invalid: '.$ref);
   if(!isset(report_area_headers($layout)[cell_coordinates($ref)[0]])||!sql_replacement_row_approved($layout,(string)($record['rowKey']??'')))throw new InvalidArgumentException('SQL formula replacement is outside approved input rows: '.$ref);
   if(($record['rowKey']??'')!=='genstat-base/'.$sheet['name'].'/A'.cell_coordinates($ref)[1])throw new InvalidArgumentException('SQL replacement belongs to a different report row: '.$ref);
@@ -35,7 +36,7 @@ function sql_replacement_validate(array $layout,array $replacements,array $formu
 function sql_replacement_issue(array $layout,string $ref,string $value,array $config,int $revision,?string $workingFormula=null): array {
  if(!sql_replacement_row_approved($layout,$config['rowKey'])||cell_coordinates($ref)[1]!==18||!isset(report_area_headers($layout)[cell_coordinates($ref)[0]])||!isset(expanded_formulas($layout['sheets'][0])[$ref])||!sql_replacement_cell_allowed($layout['sheets'][0],$ref))throw new InvalidArgumentException('Unapproved SQL formula replacement target: '.$ref);
  $sheet=$layout['sheets'][0];$record=['sourceHash'=>$layout['sha256'],'sheet'=>$sheet['name'],'ref'=>$ref,'rowKey'=>$config['rowKey'],'queryKey'=>$config['queryKey'],'mappingRevision'=>$revision,'value'=>$value,'originalFormula'=>expanded_formulas($sheet)[$ref],'replacedFormula'=>$workingFormula??expanded_formulas($sheet)[$ref],'approvedAt'=>gmdate('c'),'approvalId'=>bin2hex(random_bytes(16))];
- $record['signature']=sql_replacement_signature($record);return $record;
+ $record['reportMonth']=base_report_month($layout);$record['signature']=sql_replacement_signature($record);return $record;
 }
 function sql_replacement_working_layout(array $layout,array $replacements): array {
  if(!$replacements)return $layout;
@@ -47,5 +48,5 @@ function sql_replacement_working_layout(array $layout,array $replacements): arra
 function sql_replacement_submission(array $layout,array $incoming,array $latest): void {
  sql_replacement_validate($layout,$incoming);
  foreach($incoming as $ref=>$record)if(($latest[$ref]['signature']??null)!==$record['signature']&&empty($_SESSION['sqlReplacementGrants'][$record['signature']]))throw new InvalidArgumentException('SQL replacement requires a confirmed review: '.$ref);
- foreach($latest as $ref=>$record)if(!isset($incoming[$ref])&&empty($_SESSION['sqlRestoreGrants'][$layout['sha256']][$ref]))throw new InvalidArgumentException('Use Restore template formula before removing an SQL replacement: '.$ref);
+ foreach($latest as $ref=>$record)if(!isset($incoming[$ref])&&empty($_SESSION['sqlRestoreGrants'][base_report_scope($layout)][$ref]))throw new InvalidArgumentException('Use Restore template formula before removing an SQL replacement: '.$ref);
 }
