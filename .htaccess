@@ -1,3 +1,6 @@
 <FilesMatch "\.(xlsx|xlsm|xls|lock)$">
     Require all denied
 </FilesMatch>
+<FilesMatch "\.(local\.php|cjs|sql|json|lock)$">
+    Require all denied
+</FilesMatch>

@@ -1,4 +1,62 @@
-Current recovery controls: see [UNDO-RESYNC.md](UNDO-RESYNC.md). Undo/Redo covers ordinary and formula edits and survives autosave. Resync confirms before discarding the selected draft and reloads Excel without writing draft values into it.
+# GENSTAT
+
+Open `http://localhost/genstat/` for the compact GENSTAT report. It displays the July 2026 worksheet from `excel-files/reference/GENSTAT_BASE.xlsx` and calculates totals as report inputs change. Select a formula cell to inspect the expression. Use **Unlock formula** and confirm before editing that cell, then use **Save Draft** to retain pending report changes.
+
+Open `http://localhost/genstat/index.php?sheet=Jun26` for the annual workbook editor. `index.php?legacy=1` also opens the editor. Each view uses its own workbook and draft storage. SQL values applied in the compact report stay in that report.
+
+## SQL Query Settings
+
+Select an eligible report row, enter a SELECT query, and use **Test Query**. The application binds `:ReportMonth` from the sheet, such as `202607` for Jul26. Test shows the query result and supports area mapping, exclusions, and optional decimal calculations. This step leaves saved configuration and report values untouched.
+
+Use **Review Proposed Changes** to inspect the proposed values and affected cells. **Apply & Save** requires a valid, unexpired review and confirmation. Formula replacement on approved rows requires a separate confirmation. The server rejects stale reviews, invalid mappings, missing values, and unauthorized targets. Formula cells outside approved rows remain protected.
+
+Apply & Save commits configuration, history changes, and a recovery receipt in one transaction, then loads the reviewed values into the pending report. Use **Save Draft** to persist those values and their signed SQL replacement records. Select a replaced cell and confirm **Restore Template Formula** to recover its original expression, then save the draft.
+
+**Configuration History** shows previous versions. To restore one, select it and run Test, Review, and Apply & Save again. Confirm **Disable Configuration** to disable a row while preserving its history and report values. If a response is lost, retry the same operation or use the recovery action from the initiating session before starting another review. The receipt prevents duplicate writes. [Apply & Save workflow](docs/sql-settings-apply-save.md) · [Approved SQL row overwrite](docs/approved-sql-row-overwrite.md)
+
+## Annual workbook editing
+
+The editor uses `excel-files/active/genstat_2026.xlsx`. Worksheet tabs select the available months and auxiliary sheets. Monthly drafts in `storage/` track edits by worksheet. Use **Save Draft** before switching sheets to keep pending edits. The editor calculates supported formulas and highlights referenced cells. Source formulas and saved formula overrides require confirmation for the selected cell before editing. **Undo** and **Redo** apply to in-session edits.
+
+**Export** saves pending edits and downloads an XLSX with workbook layout and unrelated workbook parts preserved. Synchronization reconciles the active workbook with the saved draft and creates a backup before writing. **Resync from Excel** previews differences and asks for confirmation before reloading the active workbook and reconciling the draft. Keep active, reference, incoming, archived, and backup workbooks in their existing locations. [Undo and Resync](UNDO-RESYNC.md) · [Workbook storage](WORKBOOK-STORAGE.md)
+
+## Setup and reporting database permissions
+
+Use the existing XAMPP installation with Apache, PHP, and MariaDB. PHP needs DOM/XML, JSON, sessions, zlib, mysqli, and BCMath. Keep the configured workbook paths, local database credentials, and SQL replacement signing key. Installation and schema tools under `tools/` are reserved for planned setup or upgrades. Annual workbook editing can operate without SQL population.
+
+Use `npm.cmd ci` and `npm.cmd run build:css` when installing dependencies or rebuilding local CSS. The SQL modal styles are built from `assets/tailwind.input.css`. Compact report layout styles are in `assets/base-report.css`.
+
+Grant the reporting account SELECT on exactly these tables in `genstat_db`: `overallsalessummary`, `billadjustment`, `billhistorycancelled`, `billhistorycancelled_2`, `area_mapping`, `area_master`, and `kwh_diff_allocation`. A separate settings writer handles configurations, history, and receipts. SQL execution validates a single SELECT against the parser and table allowlist, restricts functions and query syntax, binds the reporting month, and enforces time and result limits. Settings requests require a valid CSRF token. [SQL Query Settings](docs/sql-query-settings.md)
+
+## Regression testing
+
+Run from the project directory.
+
+```powershell
+npm.cmd run test:unit
+npm.cmd run test:browser
+npm.cmd test
+node tools/run-tests.cjs --list
+node tools/run-tests.cjs tests/query-apply-save-browser.cjs
+node tools/run-tests.cjs tests/base-report-compact.cjs tests/headers-browser.cjs
+```
+
+Browser suites use Microsoft Edge and the existing Playwright installation at `$env:TEMP\genstat-browser\node_modules\playwright`. The runner defaults to `C:\xampp\php\php.exe` and accepts `PHP_BINARY` for runner-launched PHP. Annual browser fixtures use the XAMPP PHP path. SQL suites require the configured MariaDB accounts and parser dependencies. The workbook storage suite needs the existing June draft, root workbook, and archived source workbook as read-only fixture inputs.
+
+The runner hosts compact browser suites in disposable workbook and session directories. SQL UI checks inspect configuration and run reporting queries. The lifecycle suite creates its own settings database and account for write and recovery tests. Annual browser suites use copied workbook and draft fixtures. Run browser regression through the runner so the compact suites receive their isolated URL and output directory.
+
+Compatibility commands such as `node tests/ui.cjs` and `node tests/query-settings-browser.cjs` still resolve to their supported suites. The standard runner resolves aliases to canonical suites and executes each once. `tests/auth-setup.php` remains in the manifest for legacy CLI compatibility. The web editors use per-cell confirmation. Historical scripts omitted from `--list` are outside the supported manifest.
+
+The cleanup reports document prior implementation and verification work. [GENSTAT final cleanup](docs/genstat-final-cleanup.md) · [Batch C2 Phase 1](docs/batch-c2-phase1-cleanup.md)
+
+<details>
+<summary>Historical development notes ? superseded by the current instructions above</summary>
+
+The following record is preserved verbatim. Its earlier startup, password, editability and test instructions describe previous implementations.
+
+Current focused report: [SQL Query Settings and local Tailwind build](docs/sql-query-settings.md). [Row-level SQL formula replacement](docs/row-sql-formula-replacement.md) adds a default-off permission, separately confirmed numeric replacements, persistent signed draft metadata and explicit restoration. Supply the approved query and area bindings; no production calculation is preloaded. The source workbook remains unchanged.
+
+Current recovery controls for the annual editor: see [UNDO-RESYNC.md](UNDO-RESYNC.md). Undo/Redo covers ordinary and formula edits and survives autosave. Resync confirms before discarding the selected draft and reloads Excel without writing draft values into it.
 
 Current editing policy: see [CELL-EDITING-FIX.md](CELL-EDITING-FIX.md). Non-formula cells are editable on every worksheet, and formula editing uses confirmation for the selected cell, without an administrator password. This supersedes earlier June-only editing and global formula-unlock instructions.
 
@@ -388,3 +446,5 @@ The formula bar now keeps only fx, the flexible formula/value input, protection 
 `assets/reference-highlights.js` creates one pointer-transparent colored overlay per distinct visible local reference, clips large ranges to the rendered row/column geometry, caches inspected expressions, and shares the existing worksheet transform. Selection updates only the overlays; it does not repaint/rebuild cell nodes, alter cell style attributes or store colors in drafts/exports. Active formula selection remains above the overlays. Other-sheet/external references are listed in a subtle tooltip indicator; selecting them never switches worksheets. Automatic cross-sheet range navigation, named-range resolution, structured-table range resolution, full-row/column references, and dynamic INDIRECT/OFFSET result resolution are not implemented. Direct A1 references within those function arguments can still be identified. Three-dimensional references are indicated rather than painted as local cells.
 
 Modified `index.php`, `assets/app.js`, `assets/app.css` and the isolated browser fixture/test. Added the two display scripts and `tests/formula-references.cjs`. No calculation, synchronization, authorization, draft-storage or export logic changed. Checks passed: tokenizer cases for quoted strings/names/external books/nested functions/large ranges/invalid expressions; isolated Edge selection tests for locked source formulas, blank cells, multiple colors, clearing, cross-sheet indicators, unchanged cell styles and zoom alignment; existing formatting, formula and workbook/export-integrity PHP suites; PHP/JavaScript syntax. Visual-only formulas in the browser fixture are supplied by intercepted read responses, never written into the source workbook. Original cross-sheet expressions are also checked against real fixture metadata. Results: `tests/formula-references-results.txt`, `tests/sync-workbook-browser-results.txt` and existing regression logs; screenshot: `tests/formula-highlights.png`.
+
+</details>

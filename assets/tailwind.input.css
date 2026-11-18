@@ -1,0 +1,55 @@
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@source "../base-report.php";
+@source "../partials/sql-settings.php";
+@source "./sql-settings.js";
+/* Settings-only components: isolate the dashboard from the workbook grid. */
+#sql-settings-dialog.sql-modal{width:min(1440px,94vw);max-width:94vw;max-height:94dvh;border-radius:16px;margin:auto;overflow:auto;scrollbar-gutter:stable;box-shadow:0 24px 80px #0f172a45;font:13px Arial,sans-serif;background:#f8fafc}
+#sql-settings-dialog::backdrop{background:#0f172aa6}
+#sql-settings-dialog fieldset:disabled{opacity:.65}
+#sql-settings-dialog [hidden]{display:none!important}
+#sql-settings-dialog .settings-preview:empty{display:none}
+#sql-settings-dialog .settings-preview tr{height:auto}
+#sql-settings-dialog .sql-card{@apply min-w-0 rounded-xl border border-slate-200 bg-white p-4;}
+#sql-settings-dialog .sql-card-title{@apply m-0 text-sm font-semibold tracking-tight text-slate-900;}
+#sql-settings-dialog .sql-help{@apply m-0 text-xs font-normal leading-relaxed text-slate-500;}
+#sql-settings-dialog .settings-label{display:block;font-weight:600;font-size:12px;line-height:1.5;color:#334155;min-width:0}
+#sql-settings-dialog .settings-input{display:block;box-sizing:border-box;width:100%;margin-top:5px;background:white;font:12px Arial,sans-serif;min-height:36px;border-radius:7px;padding:8px 10px;border:1px solid #cbd5e1;font-size:12px;color:#0f172a;min-width:0;transition:border-color .15s,box-shadow .15s}
+#sql-settings-dialog .settings-input:hover{border-color:#94a3b8}
+#sql-settings-dialog .settings-input:focus{outline:2px solid #0d9488;outline-offset:2px;border-color:#0f766e}
+#sql-settings-dialog .sql-editor{font:12px/1.75 Consolas,monospace;background:#f8fafc;min-height:190px;max-height:60vh;resize:vertical;tab-size:2;white-space:pre-wrap}
+#sql-settings-dialog #sql-calculation{font-family:Consolas,monospace;background:#f8fafc}
+#sql-settings-dialog button{min-height:34px;padding:7px 12px;border-radius:7px;font-weight:600;border-color:#cbd5e1;transition:background .15s,border-color .15s}
+#sql-settings-dialog button:hover:not(:disabled){background:#f1f5f9;border-color:#94a3b8}
+#sql-settings-dialog button:focus-visible,#sql-settings-dialog summary:focus-visible,#sql-settings-dialog input[type=checkbox]:focus-visible{outline:2px solid #0d9488;outline-offset:3px}
+#sql-settings-dialog button.sql-primary{background:#0f766e;border-color:#0f766e;color:white}
+#sql-settings-dialog button.sql-primary:hover:not(:disabled){background:#115e59;border-color:#115e59}
+#sql-settings-dialog button:disabled{background:#f8fafc;color:#64748b;opacity:.75}
+#sql-settings-dialog button.sql-primary:disabled{background:#e2e8f0;border-color:#cbd5e1;color:#64748b;opacity:1}
+#sql-settings-dialog .close-settings{width:36px;height:36px;padding:5px;border:1px solid #e2e8f0;font-size:16px;flex-shrink:0}
+#sql-settings-dialog input[type=checkbox]{accent-color:#0f766e;width:14px;height:14px;flex-shrink:0;margin-top:1px}
+#sql-settings-dialog .settings-preview{max-height:320px;overflow:auto;border:1px solid #e2e8f0;border-radius:8px;overscroll-behavior:contain}
+#sql-settings-dialog .settings-preview table{table-layout:auto;width:100%;font-size:12px;border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums}
+#sql-settings-dialog .settings-preview td,#sql-settings-dialog .settings-preview th{position:static;white-space:nowrap!important;text-align:left!important;padding:9px 12px!important;line-height:1.4;max-width:420px}
+#sql-settings-dialog .settings-preview th{position:sticky;top:0;z-index:2;background:#f1f5f9!important;color:#475569!important;text-align:left!important}
+#sql-settings-dialog .settings-preview td[data-numeric=true]{text-align:right!important;font-variant-numeric:tabular-nums}
+#sql-settings-dialog .settings-preview td[data-wrap=true]{white-space:normal!important;min-width:190px;overflow-wrap:anywhere}
+#sql-settings-dialog .settings-preview tr:hover td{background:#f8fafc}
+#sql-settings-dialog .settings-preview th:last-child,#sql-settings-dialog .settings-preview td:last-child{border-right:0!important}
+#sql-settings-dialog .sql-empty{@apply m-0 px-4 py-8 text-center text-xs leading-relaxed text-slate-500;}
+#sql-settings-dialog .sql-mapping-item{@apply rounded-lg border border-slate-200 bg-slate-50 p-3;}
+#sql-settings-dialog .sql-mapping-item>select{background:white}
+#sql-settings-dialog .sql-mapping-item>input{margin-top:6px}
+#sql-settings-dialog .sql-mapping-item>button{float:right;min-height:24px;padding:2px 6px;margin-top:6px;background:transparent;border-color:transparent;font-size:11px;color:#0f766e}
+#sql-settings-dialog .sql-mapping-status{display:inline-block;margin-top:10px;font-size:11px;font-weight:500;color:#64748b}
+#sql-settings-dialog [data-state="Auto-matched"]{color:#0f766e}
+#sql-settings-dialog [data-state="Manually mapped"],#sql-settings-dialog [data-state="Previously saved"]{color:#475569}
+#sql-settings-dialog [data-state="Unmatched"],#sql-settings-dialog [data-state="Ambiguous"]{color:#92400e}
+#sql-settings-dialog #sql-column-tokens button{min-height:28px;padding:4px 9px;border-radius:6px;background:#f0fdfa;border-color:#99f6e4;color:#115e59;font:11px Consolas,monospace}
+#sql-settings-dialog #sql-column-tokens:empty::before{content:'Numeric columns appear after Test Query.';font-size:12px;color:#64748b}
+#sql-settings-dialog .sql-diagnostics:empty{display:none}
+#sql-settings-dialog .sql-diagnostics{color:#9f1239;line-height:1.7}
+#sql-settings-dialog #sql-message[data-error=true]{border-color:#fecdd3;background:#fff1f2;color:#9f1239}
+#sql-settings-dialog #sql-apply-reason[data-ready=true]{color:#0f766e}
+@media(max-width:640px){#sql-settings-dialog.sql-modal{width:96vw;max-width:96vw;max-height:96dvh;border-radius:12px}#sql-settings-dialog .sql-card{padding:12px}.sql-dialog-header{padding:12px 16px}#sql-settings-dialog .sql-actions>button,#sql-settings-dialog .sql-apply-actions>button{width:100%}#sql-settings-dialog .settings-preview{max-height:280px}#sql-settings-dialog #sql-duration{margin-left:0}#sql-settings-dialog .sql-mapping-item{overflow-wrap:anywhere}}

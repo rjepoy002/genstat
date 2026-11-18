@@ -8,6 +8,7 @@
 .env.*
 !.env.example
 config.local.php
+config/*.local.php
 secrets.php
 
 # Dependencies
@@ -25,6 +26,7 @@ secrets.php
 *.tmp
 *.log
 *.sql
+!/migrations/*.sql
 *.zip
 
 # IDE and OS

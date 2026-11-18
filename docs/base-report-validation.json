@@ -1,0 +1,805 @@
+{
+    "sourceHash": "752c1ad06bd770ea749ef7925a49adbc725ee81b3a7dd6342f5b1585253c3dce",
+    "range": "A8:S47",
+    "formulasPreserved": 312,
+    "wholeWorksheetFormulas": 402,
+    "databaseInputs": 96,
+    "editableNonFormulaCells": 122,
+    "manualOtherCells": 26,
+    "cachedMatches": 312,
+    "differences": [],
+    "warnings": [
+        {
+            "cell": "Jul26!B22",
+            "formula": "=+[2]RecovBill26!B44",
+            "message": "External workbook unavailable; original cached value retained."
+        },
+        {
+            "cell": "Jul26!D22",
+            "formula": "=+[2]RecovBill26!B45+[2]RecovBill26!B46",
+            "message": "External workbook unavailable; original cached value retained."
+        }
+    ],
+    "errors": [],
+    "wholeWorksheetWarnings": {
+        "Jul26!T18": "External workbook unavailable; original cached value retained.",
+        "Jul26!B22": "External workbook unavailable; original cached value retained.",
+        "Jul26!D22": "External workbook unavailable; original cached value retained.",
+        "Jul26!AC31": "Unsupported source formula; original cached value retained.",
+        "Jul26!AC38": "Unsupported source formula; original cached value retained."
+    },
+    "wholeWorksheetErrors": {
+        "Jul26!AC33": "#REF!",
+        "Jul26!AC41": "#REF!"
+    },
+    "databaseInputCells": [
+        {
+            "reference": "B11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Main",
+            "originalValue": "24850652.84",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "C11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Aborlan",
+            "originalValue": "1072063.3600000001",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "D11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Narra",
+            "originalValue": "2444858.4",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "E11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Quezon",
+            "originalValue": "953400",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "F11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Brooke's Point",
+            "originalValue": "4394155",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "G11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Roxas",
+            "originalValue": "1326704",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "H11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Taytay",
+            "originalValue": "1356328.4",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "I11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Balabac",
+            "originalValue": "142276.4",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "J11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Araceli/ Dumaran",
+            "originalValue": "141467.20000000001",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "K11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "San Vicente",
+            "originalValue": "620557",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "L11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "El Nido",
+            "originalValue": "4283370",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "M11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Cagayancillo",
+            "originalValue": "77340.899999999994",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "N11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Cuyo/ Magsaysay",
+            "originalValue": "711536",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "O11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Agutaya",
+            "originalValue": "58528.4",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "P11",
+            "description": "a.)  NPC/PPGI/DELTA P/DMCI",
+            "area": "Rizal",
+            "originalValue": "421008",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "B18",
+            "description": "Total KWH Sold",
+            "area": "Main",
+            "originalValue": "22718755",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "C18",
+            "description": "Total KWH Sold",
+            "area": "Aborlan",
+            "originalValue": "907326",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "D18",
+            "description": "Total KWH Sold",
+            "area": "Narra",
+            "originalValue": "2325604",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "E18",
+            "description": "Total KWH Sold",
+            "area": "Quezon",
+            "originalValue": "912374",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "G18",
+            "description": "Total KWH Sold",
+            "area": "Roxas",
+            "originalValue": "1201293",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "H18",
+            "description": "Total KWH Sold",
+            "area": "Taytay",
+            "originalValue": "1024022",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "I18",
+            "description": "Total KWH Sold",
+            "area": "Balabac",
+            "originalValue": "124843",
+            "sourceFill": "#FFFF00",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "J18",
+            "description": "Total KWH Sold",
+            "area": "Araceli/ Dumaran",
+            "originalValue": "121254",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "K18",
+            "description": "Total KWH Sold",
+            "area": "San Vicente",
+            "originalValue": "613269",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "L18",
+            "description": "Total KWH Sold",
+            "area": "El Nido",
+            "originalValue": "3820722",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "M18",
+            "description": "Total KWH Sold",
+            "area": "Cagayancillo",
+            "originalValue": "69312",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "N18",
+            "description": "Total KWH Sold",
+            "area": "Cuyo/ Magsaysay",
+            "originalValue": "669936",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "O18",
+            "description": "Total KWH Sold",
+            "area": "Agutaya",
+            "originalValue": "54652",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "P18",
+            "description": "Total KWH Sold",
+            "area": "Rizal",
+            "originalValue": "384401",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "I19",
+            "description": "Total KWH Sold (w/o BILL ADJ)",
+            "area": "Balabac",
+            "originalValue": "124843",
+            "sourceFill": "#4BACC6",
+            "eligibility": "Individual blue data cell"
+        },
+        {
+            "reference": "J19",
+            "description": "Total KWH Sold (w/o BILL ADJ)",
+            "area": "Araceli/ Dumaran",
+            "originalValue": "121254",
+            "sourceFill": "#4BACC6",
+            "eligibility": "Individual blue data cell"
+        },
+        {
+            "reference": "K19",
+            "description": "Total KWH Sold (w/o BILL ADJ)",
+            "area": "San Vicente",
+            "originalValue": "613269",
+            "sourceFill": "#4BACC6",
+            "eligibility": "Individual blue data cell"
+        },
+        {
+            "reference": "L19",
+            "description": "Total KWH Sold (w/o BILL ADJ)",
+            "area": "El Nido",
+            "originalValue": "3820767",
+            "sourceFill": "#4BACC6",
+            "eligibility": "Individual blue data cell"
+        },
+        {
+            "reference": "M19",
+            "description": "Total KWH Sold (w/o BILL ADJ)",
+            "area": "Cagayancillo",
+            "originalValue": "69312",
+            "sourceFill": "#4BACC6",
+            "eligibility": "Individual blue data cell"
+        },
+        {
+            "reference": "O19",
+            "description": "Total KWH Sold (w/o BILL ADJ)",
+            "area": "Agutaya",
+            "originalValue": "54652",
+            "sourceFill": "#4BACC6",
+            "eligibility": "Individual blue data cell"
+        },
+        {
+            "reference": "P19",
+            "description": "Total KWH Sold (w/o BILL ADJ)",
+            "area": "Rizal",
+            "originalValue": "384401",
+            "sourceFill": "#4BACC6",
+            "eligibility": "Individual blue data cell"
+        },
+        {
+            "reference": "B24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Main",
+            "originalValue": "4709",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "C24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Aborlan",
+            "originalValue": "263",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "D24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Narra",
+            "originalValue": "933",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "E24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Quezon",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "F24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Brooke's Point",
+            "originalValue": "2846",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "G24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Roxas",
+            "originalValue": "236",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "H24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Taytay",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "I24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Balabac",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "J24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Araceli/ Dumaran",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "K24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "San Vicente",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "L24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "El Nido",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "M24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Cagayancillo",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "N24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Cuyo/ Magsaysay",
+            "originalValue": "70",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "O24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Agutaya",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "P24",
+            "description": "d.)  Disconnected Consumers",
+            "area": "Rizal",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "B25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Main",
+            "originalValue": "204491",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "C25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Aborlan",
+            "originalValue": "783",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "D25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Narra",
+            "originalValue": "766",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "E25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Quezon",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "F25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Brooke's Point",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "G25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Roxas",
+            "originalValue": "455",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "H25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Taytay",
+            "originalValue": "-477",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "I25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Balabac",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "J25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Araceli/ Dumaran",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "K25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "San Vicente",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "L25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "El Nido",
+            "originalValue": "-45",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "M25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Cagayancillo",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "N25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Cuyo/ Magsaysay",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "O25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Agutaya",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "P25",
+            "description": "e.) Bill Adjustment (Previous months)",
+            "area": "Rizal",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "B26",
+            "description": "f.) Coop Consumption",
+            "area": "Main",
+            "originalValue": "27890",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "C26",
+            "description": "f.) Coop Consumption",
+            "area": "Aborlan",
+            "originalValue": "1407",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "D26",
+            "description": "f.) Coop Consumption",
+            "area": "Narra",
+            "originalValue": "1948",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "E26",
+            "description": "f.) Coop Consumption",
+            "area": "Quezon",
+            "originalValue": "2009",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "F26",
+            "description": "f.) Coop Consumption",
+            "area": "Brooke's Point",
+            "originalValue": "3105",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "G26",
+            "description": "f.) Coop Consumption",
+            "area": "Roxas",
+            "originalValue": "1337",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "H26",
+            "description": "f.) Coop Consumption",
+            "area": "Taytay",
+            "originalValue": "816",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "I26",
+            "description": "f.) Coop Consumption",
+            "area": "Balabac",
+            "originalValue": "30",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "J26",
+            "description": "f.) Coop Consumption",
+            "area": "Araceli/ Dumaran",
+            "originalValue": "204",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "K26",
+            "description": "f.) Coop Consumption",
+            "area": "San Vicente",
+            "originalValue": "483",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "L26",
+            "description": "f.) Coop Consumption",
+            "area": "El Nido",
+            "originalValue": "541",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "M26",
+            "description": "f.) Coop Consumption",
+            "area": "Cagayancillo",
+            "originalValue": "40",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "N26",
+            "description": "f.) Coop Consumption",
+            "area": "Cuyo/ Magsaysay",
+            "originalValue": "1015",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "O26",
+            "description": "f.) Coop Consumption",
+            "area": "Agutaya",
+            "originalValue": "10",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "P26",
+            "description": "f.) Coop Consumption",
+            "area": "Rizal",
+            "originalValue": "1087",
+            "sourceFill": "#FFFFFF",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "B39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Main",
+            "originalValue": "988655.69",
+            "sourceFill": "#ccc1da",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "C39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Aborlan",
+            "originalValue": "",
+            "sourceFill": "#ccc1da",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "D39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Narra",
+            "originalValue": "122348.22",
+            "sourceFill": "#ccc1da",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "E39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Quezon",
+            "originalValue": "",
+            "sourceFill": "#ccc1da",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "F39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Brooke's Point",
+            "originalValue": "199069.81",
+            "sourceFill": "#ccc1da",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "G39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Roxas",
+            "originalValue": "87797.43",
+            "sourceFill": "#ccc1da",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "H39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Taytay",
+            "originalValue": "73212.009999999995",
+            "sourceFill": "#ccc1da",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "I39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Balabac",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "J39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Araceli/ Dumaran",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "K39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "San Vicente",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "L39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "El Nido",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "M39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Cagayancillo",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "N39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Cuyo/ Magsaysay",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "O39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Agutaya",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        },
+        {
+            "reference": "P39",
+            "description": "TX/SS Losses In KWH-Grid",
+            "area": "Rizal",
+            "originalValue": "",
+            "sourceFill": "none",
+            "eligibility": "Designated blue input row, area B:P (excludes totals/comparisons)"
+        }
+    ]
+}

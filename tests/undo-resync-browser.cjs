@@ -4,9 +4,10 @@ const {spawn,execFileSync}=require('child_process');
 const {chromium}=require(process.env.TEMP+'\\genstat-browser\\node_modules\\playwright');
 const root=path.resolve('.'),php='C:\\xampp\\php\\php.exe',fixture=fs.mkdtempSync(path.join(os.tmpdir(),'genstat-history-'));
 const liveDraft=fs.readFileSync('storage/draft-2026-06.json'),liveWorkbook=fs.readFileSync('excel-files/active/genstat_2026.xlsx');
-for(const dir of ['lib','tools','config','assets'])fs.cpSync(dir,path.join(fixture,dir),{recursive:true});
+for(const dir of ['lib','tools','assets'])fs.cpSync(dir,path.join(fixture,dir),{recursive:true});
 for(const file of ['index.php','api.php','genstat.xlsx'])fs.copyFileSync(file,path.join(fixture,file));
 for(const dir of ['storage','excel-files/active','excel-files/incoming','excel-files/backups','excel-files/archive'])fs.mkdirSync(path.join(fixture,dir),{recursive:true});
+fs.mkdirSync(path.join(fixture,'config'));for(const name of ['inputs.php','layout.json'])fs.copyFileSync(path.join(root,'config',name),path.join(fixture,'config',name));
 const active=path.join(fixture,'excel-files/active/genstat_2026.xlsx'),draft=path.join(fixture,'storage/draft-2026-06.json'),cacheFile=path.join(fixture,'storage/template-auto.json');
 fs.writeFileSync(active,liveWorkbook);fs.copyFileSync('storage/template-auto.json',cacheFile);
 const hash=crypto.createHash('sha256').update(liveWorkbook).digest('hex'),checkpoint=path.join(fixture,'storage/workbook-sync.json');
@@ -15,15 +16,16 @@ fs.writeFileSync(draft,JSON.stringify({period:'2026-06',sheet:'Jun26',templateHa
 const monthly=path.join(fixture,'storage/draft-2026-01--'+crypto.createHash('sha256').update('Jan26').digest('hex').slice(0,16)+'.json');
 fs.writeFileSync(monthly,JSON.stringify({period:'2026-01',sheet:'Jan26',templateHash:hash,values:{AG99:'month-preserved'},formulas:{},sourceCells:{AG99:{value:'',formula:null,attributes:null}},revision:2,savedAt:'2026-10-27T00:01:00Z'}));
 const monthBytes=fs.readFileSync(monthly),port=20000+Math.floor(Math.random()*1000),base='http://127.0.0.1:'+port+'/';
-const server=spawn(php,['-S','127.0.0.1:'+port,'-t',fixture],{windowsHide:true,stdio:'ignore'});
+fs.mkdirSync(path.join(fixture,'sessions'));
+const server=spawn(php,['-d','session.save_path=sessions','-S','127.0.0.1:'+port,'-t',fixture],{cwd:fixture,windowsHide:true,stdio:'ignore'});
 const data=()=>JSON.parse(fs.readFileSync(draft));
 function phpCode(code){return execFileSync(php,['-r',code],{cwd:fixture,encoding:'utf8',windowsHide:true});}
 (async()=>{let browser;
 try{
- for(let i=0;i<50;i++){try{await fetch(base);break;}catch{await new Promise(r=>setTimeout(r,100));}}
+ for(let i=0;i<50;i++){try{const response=await fetch(base+'?sheet=Jun26');if(response.ok)break;}catch{await new Promise(r=>setTimeout(r,100));}}
  browser=await chromium.launch({executablePath:'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',headless:true});
- const page=await browser.newPage({viewport:{width:1400,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
- async function ready(){await page.goto(base);await page.waitForFunction(()=>!document.querySelector('input[data-ref="AG99"]').disabled,{},{timeout:60000});}
+ const page=await browser.newPage({viewport:{width:1400,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(60000);page.on('framenavigated',f=>{if(f===page.mainFrame())console.log('Fixture navigation: '+f.url());});
+ async function ready(){await page.goto(base+'?sheet=Jun26');await page.waitForFunction(()=>!document.querySelector('input[data-ref="AG99"]').disabled,{},{timeout:60000});}
  async function settled(){await page.waitForFunction(()=>!document.querySelector('#save').disabled,{},{timeout:60000});}
  async function persisted(check){for(let i=0;i<600;i++){if(check(data())){await settled();return;}await page.waitForTimeout(100);}throw new Error('Draft persistence timed out: '+JSON.stringify(data()));}
  const input=page.locator('input[data-ref="AG99"]');await ready();

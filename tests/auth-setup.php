@@ -1,5 +1,7 @@
 <?php
 declare(strict_types=1);
+// Legacy CLI/status compatibility only. Active per-cell confirmation is tested
+// in the isolated annual browser suite; never include both auth modules here.
 define('ROOT',sys_get_temp_dir().'/genstat-auth-'.bin2hex(random_bytes(8)));
 require __DIR__.'/../lib/formula-auth.php';
 mkdir(ROOT);mkdir(ROOT.'/storage');$_SESSION=[];

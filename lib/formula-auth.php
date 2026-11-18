@@ -18,25 +18,4 @@ function formula_auth_status(): array {
  if(!$unlocked)unset($_SESSION['formulaGrant']);
  return ['configured'=>$a!==null,'setupState'=>$setup['state'],'setupMessage'=>$setup['message'],'unlocked'=>$unlocked,'expiresAt'=>$unlocked?$grant['expiresAt']:null,'identity'=>$unlocked?$a['identity']:null];
 }
-function require_formula_authorization(): string {
- $s=formula_auth_status();if(!$s['unlocked'])throw new FormulaPermissionException('Protected formula changes require an active authorized formula-editing session.');return $s['identity'];
-}
 final class FormulaPermissionException extends RuntimeException {}
-function unlock_formulas(string $password): array {
- $authority=formula_authority();if(!$authority)throw new FormulaPermissionException('Formula editing is not configured. A local administrator must run php tools/formula-admin.php setup.');
- // A server-side, cross-session attempt counter prevents session resets from
- // bypassing the password throttle. No secret is logged or sent back.
- $path=ROOT.'/storage/formula-auth-attempts.json';$lock=fopen($path.'.lock','c');if(!$lock||!flock($lock,LOCK_EX))throw new RuntimeException('Cannot lock authorization attempts.');
- try{
-  $state=is_file($path)?json_decode(file_get_contents($path),true):[];
-  if(($state['until']??0)>time())throw new FormulaPermissionException('Too many unlock attempts. Try again in 5 minutes.');
-  if(strlen($password)>256||!password_verify($password,$authority['passwordHash'])){
-   $count=(($state['startedAt']??0)>time()-300?($state['count']??0):0)+1;
-   atomic_file_write($path,json_bytes(['count'=>$count,'startedAt'=>$state['startedAt']??time(),'until'=>$count>=5?time()+300:0]));
-   throw new FormulaPermissionException('Formula editing password was not accepted.');
-  }
-  atomic_file_write($path,json_bytes(['count'=>0,'startedAt'=>time(),'until'=>0]));
-  session_regenerate_id(true);$_SESSION['formulaGrant']=['expiresAt'=>time()+600,'credentialVersion'=>hash('sha256',$authority['passwordHash'])];
-  return formula_auth_status();
- }finally{flock($lock,LOCK_UN);fclose($lock);}
-}

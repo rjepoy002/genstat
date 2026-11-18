@@ -1,5 +1,7 @@
 <?php
 declare(strict_types=1);
+// The focused authoritative base report is the default; retain the full annual editor.
+if(!isset($_GET['legacy'])&&!isset($_GET['sheet'])){require __DIR__.'/base-report.php';return;}
 require __DIR__.'/lib/app.php';require __DIR__.'/lib/render.php';require __DIR__.'/tools/build-layout.php';
 session_set_cookie_params(['httponly'=>true,'samesite'=>'Strict']);session_start();$_SESSION['csrf']??=bin2hex(random_bytes(32));
 try{$l=layout(true);$s=$l['sheets'][0];$primary=true;if(isset($_GET['sheet'])){if(!is_string($_GET['sheet']))throw new InvalidArgumentException('Invalid worksheet identifier.');$matches=array_values(array_filter($l['sheets'],fn($sheet)=>$sheet['name']===$_GET['sheet']));if(!$matches)throw new InvalidArgumentException('Unknown worksheet.');$s=$matches[0];$primary=true;}}catch(Throwable $e){http_response_code(503);header('Content-Type: text/html; charset=utf-8');echo '<!doctype html><html lang="en"><meta charset="utf-8"><title>GenStat synchronization error</title><h1>Synchronization error</h1><p>'.htmlspecialchars($e->getMessage(),ENT_QUOTES,'UTF-8').'</p><p>Existing drafts are preserved. Correct the workbook and reload to retry.</p></html>';exit;}
@@ -16,14 +18,10 @@ function ui_icon(string $name): string {
   'open'=>'M3 7h6l2 3h10l-3 10H3V7Zm0 0V4h6l2 3h8v3',
   'save'=>'M5 3h12l4 4v14H3V3h2Zm2 0v6h10V3M7 21v-8h10v8',
   'export'=>'M12 3v12m-5-5 5 5 5-5M4 15v6h16v-6',
-  'shield'=>'m12 3 9 4v6c0 4-9 8-9 8s-9-4-9-8V7l9-4Zm-4 9 3 3 5-6',
   'lock'=>'M6 11h12v10H6V11Zm3 0V7a3 3 0 0 1 6 0v4m-3 4v2',
-  'info'=>'M12 8h.01M12 11v6M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z',
-  'sheet'=>'M5 3h14v18H5V3Zm0 6h14M5 15h14M11 3v18',
   'zoom'=>'M21 21l-6-6m2-6a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z',
   'sync'=>'M20 7v5h-5M4 17v-5h5M5 8a8 8 0 0 1 13-3l2 3M4 16l2 3a8 8 0 0 0 13-3',
   'warning'=>'m12 3 10 18H2L12 3Zm0 6v5m0 3h.01',
-  'copy'=>'M9 8h12v13H9V8ZM3 16V3h12',
  ];
  return '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'.$paths[$name].'"/></svg>';
 }

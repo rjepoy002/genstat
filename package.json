@@ -1,0 +1,17 @@
+{
+  "name": "genstat-local-assets",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./assets/tailwind.input.css -o ./assets/tailwind.css --minify",
+    "test": "node tools/run-tests.cjs",
+    "test:unit": "node tools/run-tests.cjs --group=unit",
+    "test:browser": "node tools/run-tests.cjs --group=browser"
+  },
+  "dependencies": {
+    "node-sql-parser": "5.3.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.0",
+    "tailwindcss": "4.3.0"
+  }
+}

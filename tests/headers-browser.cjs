@@ -11,7 +11,8 @@ for(const dir of ['storage','excel-files/active','excel-files/incoming','excel-f
 fs.writeFileSync(path.join(fixture,'excel-files/active/genstat_2026.xlsx'),workbook);for(const [name,bytes] of drafts)fs.writeFileSync(path.join(fixture,'storage',name),bytes);
 fs.copyFileSync('storage/template-auto.json',path.join(fixture,'storage/template-auto.json'));
 const port=22000+Math.floor(Math.random()*1000),base='http://127.0.0.1:'+port+'/';
-const server=spawn(php,['-S','127.0.0.1:'+port,'-t',fixture],{windowsHide:true,stdio:'ignore'});
+fs.mkdirSync(path.join(fixture,'sessions'));
+const server=spawn(php,['-d','session.save_path=sessions','-S','127.0.0.1:'+port,'-t',fixture],{cwd:fixture,windowsHide:true,stdio:'ignore'});
 (async()=>{let browser;try{
  for(let i=0;i<50;i++){try{await fetch(base);break;}catch{await new Promise(r=>setTimeout(r,100));}}
  browser=await chromium.launch({executablePath:'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',headless:true});

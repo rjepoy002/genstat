@@ -1,0 +1,12 @@
+<?php
+declare(strict_types=1);
+// Read-only verification of an exported disposable annual fixture; no app/layout initialization.
+require __DIR__.'/../lib/xlsx.php';
+$source=zip_read($argv[1]);$export=zip_read($argv[2]);$wb=xml_path(xml_doc(zip_text($source,'xl/workbook.xml')));$sheet=$wb->query('//s:sheet[@name="Jun26"]')->item(0);if(!$sheet)throw new RuntimeException('June worksheet missing.');$rid=$sheet->getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');$rels=xml_doc(zip_text($source,'xl/_rels/workbook.xml.rels'));$part=null;foreach($rels->documentElement->childNodes as $rel)if($rel instanceof DOMElement&&$rel->getAttribute('Id')===$rid){$target=$rel->getAttribute('Target');$part=str_starts_with($target,'/')?ltrim($target,'/'):'xl/'.$target;}if(!$part)throw new RuntimeException('Worksheet relationship missing.');$sx=xml_path(xml_doc(zip_text($source,$part)));$ex=xml_path(xml_doc(zip_text($export,$part)));
+if($ex->evaluate('string(//s:c[@r="Q11"]/s:f)')!=='ROUND(37/3,2)')throw new RuntimeException('Confirmed formula not exported.');
+foreach(['A1'=>'GENSTAT label changed','AG99'=>'notes & <text>'] as $ref=>$value)if($ex->evaluate('string(//s:c[@r="'.$ref.'"]/s:is/s:t)')!==$value)throw new RuntimeException('Text input not preserved: '.$ref);
+foreach($sx->query('//s:f') as $f){$ref=$f->parentNode->getAttribute('r');if($ref==='Q11')continue;$next=$ex->query('//s:c[@r="'.$ref.'"]/s:f')->item(0);if(!$next||$next->C14N()!==$f->C14N())throw new RuntimeException('Unrelated formula changed: '.$ref);}
+foreach(['cols','mergeCells','pageMargins','pageSetup'] as $tag){$a=$sx->query('//s:'.$tag)->item(0);$b=$ex->query('//s:'.$tag)->item(0);if(($a?->C14N())!==($b?->C14N()))throw new RuntimeException('Layout changed: '.$tag);}
+foreach($source as $name=>$entry)if(!in_array($name,[$part,'xl/workbook.xml','xl/calcChain.xml','xl/_rels/workbook.xml.rels','[Content_Types].xml'],true)&&zip_text($source,$name)!==zip_text($export,$name))throw new RuntimeException('Untouched workbook part changed: '.$name);
+foreach($export as $name=>$entry){$raw=zip_text($export,$name);if(strlen($raw)!==$entry['header']['size']||sprintf('%u',crc32($raw))!==sprintf('%u',$entry['header']['crc']))throw new RuntimeException('Invalid ZIP export: '.$name);}
+echo "PASS: annual browser export preserves confirmed formula/text, every unrelated formula, styles, layout, other sheets, external links and ZIP integrity.\n";
