@@ -44,3 +44,9 @@ html.dark .cell.manual-input{background:#5b4518!important;color:#fff3c4!importan
 html.dark .cell.calculation-error{color:#fda4af!important}
 html.dark :is(.dialog-message,.warning-count){background:#273449;color:#cbd5e1!important}
 html.dark :is(.dialog-message.error-message,.warning-count.has-errors,.template-update[data-state="error"],.template-update[data-state="conflict"]){background:#4c1d30;color:#fda4af!important;border-color:#be5779}
+
+[data-excel-headings="off"] :is(#column-headings,#row-headings,#sheet-corner){display:none}
+[data-excel-headings="off"] #sheet{left:calc(-36px * var(--worksheet-zoom,.7));top:calc(-24px * var(--worksheet-zoom,.7))}
+
+#formula-unlock svg[hidden]{display:none}
+:is(#formula-unlock,#formula-history)[data-tooltip]::after{width:max-content;max-width:min(200px,calc(100vw - 110px));white-space:normal}

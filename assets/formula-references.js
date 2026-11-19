@@ -10,25 +10,25 @@
  function tokenize(formula){
   if(typeof formula!=='string'||!formula.startsWith('=')||formula.length>32768)throw new Error('Formula cannot be inspected.');
   const tokens=[];let i=1,depth=0;
-  while(i<formula.length){const c=formula[i];if(/\s/.test(c)){i++;continue;}
+  while(i<formula.length){const c=formula[i];if(/\s/.test(c)){i++;continue;}const start=i;
    if(c==='"'||c==="'"){
     const quote=c;let value='',closed=false;i++;
     while(i<formula.length){if(formula[i]===quote){if(formula[i+1]===quote){value+=quote;i+=2;}else{i++;closed=true;break;}}else value+=formula[i++];}
-    if(!closed)throw new Error('Unclosed formula string or worksheet name.');tokens.push({kind:quote==='"'?'string':'quoted',value});continue;
+    if(!closed)throw new Error('Unclosed formula string or worksheet name.');tokens.push({kind:quote==='"'?'string':'quoted',value,start,end:i});continue;
    }
-   if(c==='['){let value='',nest=0;do{const ch=formula[i++];value+=ch;if(ch==='[')nest++;if(ch===']')nest--;}while(i<formula.length&&nest);if(nest)throw new Error('Unclosed workbook or structured reference.');tokens.push({kind:'bracket',value});continue;}
+   if(c==='['){let value='',nest=0;do{const ch=formula[i++];value+=ch;if(ch==='[')nest++;if(ch===']')nest--;}while(i<formula.length&&nest);if(nest)throw new Error('Unclosed workbook or structured reference.');tokens.push({kind:'bracket',value,start,end:i});continue;}
    if(/[0-9]/.test(c)||c==='.'&&/[0-9]/.test(formula[i+1]||'')){
-    const numeric=/^(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?/.exec(formula.slice(i))[0];tokens.push({kind:'number',value:numeric});i+=numeric.length;if(nameChar(formula[i]))throw new Error('Invalid numeric formula token.');continue;
+    const numeric=/^(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?/.exec(formula.slice(i))[0];i+=numeric.length;tokens.push({kind:'number',value:numeric,start,end:i});if(nameChar(formula[i]))throw new Error('Invalid numeric formula token.');continue;
    }
-   if(nameChar(c)){let value='';while(i<formula.length&&nameChar(formula[i]))value+=formula[i++];tokens.push({kind:'name',value});continue;}
+   if(nameChar(c)){let value='';while(i<formula.length&&nameChar(formula[i]))value+=formula[i++];tokens.push({kind:'name',value,start,end:i});continue;}
    if(c==='(')depth++;if(c===')'&&--depth<0)throw new Error('Unbalanced formula parentheses.');
-   tokens.push({kind:c,value:c});i++;
+   tokens.push({kind:c,value:c,start,end:++i});
   }
   if(depth)throw new Error('Unbalanced formula parentheses.');return tokens;
  }
  function parse(formula,currentSheet){
   try{
-   const tokens=tokenize(formula),references=[],seen=new Set();let i=0;
+   const tokens=tokenize(formula),references=[],occurrences=[],seen=new Map();let i=0,unsupported=false;
    function readReference(start){let n=start,sheet=null,external=false,threeD=false;
     if(tokens[n]?.kind==='bracket'&&(tokens[n+1]?.kind==='name'||tokens[n+1]?.kind==='quoted')&&tokens[n+2]?.kind==='!'){external=true;sheet=tokens[n].value+tokens[n+1].value;n+=3;}
     else if(['name','quoted'].includes(tokens[n]?.kind)&&tokens[n+1]?.kind===':'&&['name','quoted'].includes(tokens[n+2]?.kind)&&tokens[n+3]?.kind==='!'){sheet=tokens[n].value+':'+tokens[n+2].value;threeD=true;n+=4;}
@@ -45,12 +45,28 @@
    }
    while(i<tokens.length){
     // Brackets belonging to tables and quoted literals are opaque tokens.
-    const result=readReference(i);if(result){const r=result.reference,key=JSON.stringify(r);if(!seen.has(key)){references.push(r);seen.add(key);}i=result.end;}
-    else{if(['name','quoted','bracket'].includes(tokens[i].kind)&&tokens[i+1]?.kind==='!'){i+=2;if(tokens[i]?.kind==='name')i++;}else i++;}
+    const result=readReference(i);
+    if(result){
+     const r=result.reference,start=tokens[i].start,end=tokens[result.end-1].end;
+     const before=tokens[i-1],after=tokens[result.end];
+     const isOperand=token=>['name','quoted','bracket',')'].includes(token?.kind);
+     if(after?.kind==='#'||(isOperand(before)&&start>before.end)||(isOperand(after)&&after.kind!==')'&&after.start>end))
+      throw new Error('Spill and intersection references are unavailable.');
+     const key=JSON.stringify([r.sheet.toLowerCase(),r.external,r.threeD,r.c1,r.c2,r.r1,r.r2]);
+     if(!seen.has(key)){seen.set(key,references.length);references.push(r);}
+     occurrences.push({start,end,index:seen.get(key)});
+     i=result.end;
+    }else{
+     const token=tokens[i];
+     if(token.kind===':')throw new Error('This range syntax is unavailable.');
+     if((token.kind==='name'&&/^(?:_xlfn\.)?(INDIRECT|OFFSET)$/i.test(token.value)&&tokens[i+1]?.kind==='(')||token.kind==='bracket'||(token.kind==='name'&&tokens[i+1]?.kind!=='('&&!/^(TRUE|FALSE)$/i.test(token.value)))unsupported=true;
+     if(['name','quoted','bracket'].includes(token.kind)&&tokens[i+1]?.kind==='!'){i+=2;if(tokens[i]?.kind==='name')i++;}
+     else i++;
+    }
     if(references.length>512)throw new Error('Too many references to highlight.');
    }
-   return {references,error:null};
-  }catch(error){return {references:[],error:error.message};}
+   return {references,occurrences,unsupported,error:null};
+  }catch(error){return {references:[],occurrences:[],unsupported:false,error:error.message};}
  }
  root.GenStatFormulaReferences={parse};
  if(typeof module!=='undefined'&&module.exports)module.exports=root.GenStatFormulaReferences;

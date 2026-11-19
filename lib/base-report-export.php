@@ -47,6 +47,7 @@ function base_report_export(array $layout,array $values,array $formulas,array $r
    continue;
   }
   if(isset($replacements[$ref])){write_cell_value($doc,$node,$replacements[$ref]['value']);continue;}
+  if(isset($formulas[$ref])&&!str_starts_with($formulas[$ref],'=')){write_cell_value($doc,$node,$formulas[$ref]);continue;}
   if(isset($values[$ref])){write_cell_value($doc,$node,$values[$ref]);continue;}
   if($model['classification']!=='formula'){
    if($month!==BASE_REPORT_LEGACY_MONTH&&$result['value']===null&&is_numeric($model['value']))write_cell_value($doc,$node,'');

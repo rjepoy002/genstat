@@ -6,14 +6,17 @@
  const confirmationWarning=document.querySelector('#report-confirmation-warning');
  const confirmationDetail=document.querySelector('#report-confirmation-detail');
  const confirmationButton=confirmationDialog.querySelector('[value="confirm"]');
- function confirmAction(message,{restore=false,detail=''}={}){
+ function confirmAction(message,{restore=false,detail='',formulaUnlock=false}={}){
   if(confirmationDialog.open)return Promise.resolve(false);
   confirmationDialog.returnValue='';
-  confirmationTitle.textContent=restore?'Restore Report Formulas?':'Confirm report action';
-  confirmationWarning.hidden=!restore;
+  confirmationTitle.textContent=formulaUnlock?'Unlock All Formula Cells?':restore?'Restore Report Formulas?':'Confirm report action';
+  confirmationWarning.hidden=!restore&&!formulaUnlock;
+  confirmationWarning.querySelector('span').textContent=formulaUnlock
+   ?'Changes to formulas may affect calculated report values. All committed edits will be recorded in Formula Edit History.'
+   :'Any unsaved manual changes to affected cells will be replaced.';
   confirmationDetail.hidden=!detail;
   confirmationDetail.textContent=detail;
-  confirmationButton.textContent=restore?'Restore & Recalculate':'Continue';
+  confirmationButton.textContent=formulaUnlock?'Unlock Formulas':restore?'Restore & Recalculate':'Continue';
   confirmationButton.toggleAttribute('data-restore',restore);
   document.querySelector('#report-confirmation-message').textContent=message;
   return new Promise(resolve=>{
@@ -21,7 +24,9 @@
    confirmationDialog.showModal();
   });
  }
- let selected=null,dirty=false,sequence=0,pending=Promise.resolve(),loading=false,saving=false,exporting=false;const grants=new Set();
+ let selected=null,dirty=false,sequence=0,pending=Promise.resolve(),loading=false,saving=false,exporting=false;let worksheetUnlocked=false,editingRef=null,changingLock=false;
+ const manualHistory=new GenstatEditHistory();
+ const undoFormula=document.querySelector('#undo-formula');
  data.preview={};
  const controlled=ref=>Object.hasOwn(data.total,ref);
  const inputValue=ref=>controlled(ref)?(data.total[ref]??''):data.values[ref]??data.preview[ref]??(data.month!=='202607'&&Number.isFinite(Number(data.metadata[ref].originalValue))?'':data.metadata[ref].originalValue);
@@ -41,7 +46,25 @@
  // Element-only zoom keeps native table layout and sticky cells in the same
  // coordinate system. Never zoom the browser or shrink desktop text below 10px.
  const table=document.querySelector('#genstat-report-table'),viewport=document.querySelector('.report-scroll');
- let selectedRowLabel=null;
+ const referenceHighlights=createBaseReportReferenceHighlights(table,data.metadata,bar);
+ let inspectingFormula=false,selectedRowLabel=null;
+ function clearFormulaReferences(){
+  inspectingFormula=false;
+  if(selected?.hasAttribute('data-active-formula'))selected.classList.remove('selected');
+  selected?.removeAttribute('data-active-formula');
+  referenceHighlights.show(null);
+ }
+ function activeFormula(ref){
+  if(controlled(ref)||Object.hasOwn(data.sqlReplacements,ref)||Object.hasOwn(data.values,ref))return null;
+  const formula=data.formulas[ref]??data.metadata[ref].effectiveFormula;
+  return formula?.startsWith('=')?formula:null;
+ }
+ function refreshFormulaReferences(){
+  const ref=selected?.dataset.ref;
+  const formula=inspectingFormula&&ref?activeFormula(ref):null;
+  selected?.toggleAttribute('data-active-formula',Boolean(formula));
+  referenceHighlights.show(formula,ref?data.metadata[ref].worksheet:null);
+ }
  function selectRowLabel(label){
   if(selectedRowLabel){
    selectedRowLabel.setAttribute('aria-pressed','false');
@@ -55,7 +78,12 @@
  }
  document.addEventListener('click',e=>{
   const label=e.target.closest('.report-row-toggle');
-  selectRowLabel(label&&table.contains(label)?label:null);
+  const rowLabel=label&&table.contains(label)?label:null;
+  selectRowLabel(rowLabel);
+  if(rowLabel){clearFormulaReferences();return;}
+  const cell=e.target.closest('[data-classification]');
+  if(cell&&table.contains(cell)){select(cell,true);return;}
+  clearFormulaReferences();
  });
  const totalToggle=document.querySelector('#total-group-toggle');
  const totalPreference='genstat_total_group_collapsed';
@@ -79,12 +107,12 @@
  function sizeNumericColumns(){
   const fontSize=parseFloat(getComputedStyle(table).fontSize);
   const padding=parseFloat(getComputedStyle(table).getPropertyValue('--report-cell-padding'));
-  const cols=[...table.querySelectorAll('col')];
+  const cols=[...table.querySelectorAll('col[data-column]')];
   const numericWidths=new Map();
-  let requiredWidth=210;
+  let requiredWidth=(cols[0]?.hidden?0:210)+parseFloat(getComputedStyle(table).getPropertyValue('--excel-gutter'));
   for(const column of cols.slice(1)){
    const total=column.hasAttribute('data-total-column');
-   if(total&&totalCollapsed)continue;
+   if(column.hidden||total&&totalCollapsed)continue;
    let width=(total?126:94)+2*(padding-5);
    for(const row of table.rows){if(row.hidden)continue;
     const cell=row.querySelector(`[data-ref="${column.dataset.column}${row.dataset.excelRow}"]`);
@@ -118,10 +146,11 @@
    const ref=cell.dataset.ref,record=data.sqlReplacements[ref],fromSql=sqlSource(ref);
    cell.dataset.templateTitle??=cell.title;
    cell.setAttribute('aria-readonly',String(controlled(ref)||!data.metadata[ref].editable));
+   cell.toggleAttribute('data-manual-formula-override',Object.hasOwn(data.formulas,ref)&&!controlled(ref)&&!record);
    if(fromSql)cell.dataset.sqlApplied='true';
    else delete cell.dataset.sqlApplied;
    cell.title=controlled(ref)?ref+' ? SQL-controlled Total KWH Sold':
-    fromSql?(record?`${ref} ? SQL-applied value ? Original template ${record.originalFormula}`:`${ref} ? SQL-applied value`):cell.dataset.templateTitle;
+    fromSql?(record?`${ref} ? SQL-applied value ? Original template ${record.originalFormula}`:`${ref} ? SQL-applied value`):cell.dataset.templateTitle+(cell.hasAttribute('data-manual-formula-override')?' / Manual formula override':'');
   }
  }
  function setManualValue(ref,value){
@@ -144,12 +173,138 @@
   }
   warn(result.warnings,result.errors);sizeNumericColumns();
  }
- function select(cell){selected?.classList.remove('selected');selected=cell;cell.classList.add('selected');const ref=cell.dataset.ref,m=data.metadata[ref],sql=data.sqlReplacements[ref];document.querySelector('#selection').textContent=ref;document.querySelector('#cell-kind').textContent=controlled(ref)?'SQL-controlled value':sql?'SQL-applied value · template formula preserved':sqlSource(ref)?'SQL-applied value':m.classification;bar.value=controlled(ref)?(data.total[ref]??'#N/A'):sql?sql.value:(data.formulas[ref]??(m.effectiveFormula!==null?'='+m.effectiveFormula.replace(/^=/,''):inputValue(ref)));bar.readOnly=controlled(ref)||Boolean(sql)||!m.editable&&!grants.has(ref);unlock.disabled=controlled(ref)||Boolean(sql)||m.classification!=='formula'||grants.has(ref);}
- table.addEventListener('focusin',e=>{const cell=e.target.closest('[data-classification]');if(cell)select(cell);});
+ function showUnlockState(unlocked){
+  const action=unlocked?'Lock Formulas':'Unlock Formulas';
+  table.toggleAttribute('data-formulas-unlocked',unlocked);
+  unlock.setAttribute('aria-pressed',String(unlocked));
+  unlock.setAttribute('aria-label',action);
+  unlock.title=unlock.dataset.tooltip=action;
+  unlock.querySelector('[data-lock-icon="closed"]').toggleAttribute('hidden',unlocked);
+  unlock.querySelector('[data-lock-icon="open"]').toggleAttribute('hidden',!unlocked);
+ }
+ function canEditCell(cell){
+  const ref=cell.dataset.ref;
+  if(controlled(ref)||Object.hasOwn(data.sqlReplacements,ref))return false;
+  if(cell.hasAttribute('data-original-formula-editable'))return worksheetUnlocked&&!Object.hasOwn(data.preview,ref);
+  return data.metadata[ref].editable;
+ }
+ function select(cell,inspect=inspectingFormula){
+  selected?.classList.remove('selected');
+  selected?.removeAttribute('data-active-formula');
+  inspectingFormula=inspect;
+  selected=cell;
+  cell.classList.add('selected');
+  const ref=cell.dataset.ref,metadata=data.metadata[ref],sql=data.sqlReplacements[ref];
+  const isControlled=controlled(ref),formula=activeFormula(ref);
+  document.querySelector('#selection').textContent=ref;
+  document.querySelector('#cell-kind').textContent=isControlled?'SQL-controlled value':
+   sql?'SQL-applied value ? template formula preserved':sqlSource(ref)?'SQL-applied value':metadata.classification;
+  bar.value=isControlled?(data.total[ref]??'#N/A'):sql?sql.value:(data.formulas[ref]??formula??inputValue(ref));
+  bar.readOnly=!canEditCell(cell);
+  if(inspect&&formula&&selectedRowLabel)selectRowLabel(null);
+  refreshFormulaReferences();
+ }
+ table.addEventListener('focusin',e=>{
+  const cell=e.target.closest('[data-classification]');
+  if(cell)select(cell,!e.target.closest('.report-row-toggle'));
+ });
  function recalculate(){const version=++sequence;dirty=true;status.textContent='Recalculating…';pending=pending.catch(()=>{}).then(async()=>{const result=await request('calculate');if(version!==sequence)return;renderCalculation(result);status.textContent='Unsaved changes';}).catch(e=>{status.textContent=e.message;status.classList.add('error');});return pending;}
  table.addEventListener('change',e=>{if(!e.target.matches('td input'))return;setManualValue(e.target.dataset.ref,e.target.value);select(e.target.closest('td'));recalculate();});
- unlock.addEventListener('click',async()=>{if(!selected)return;const ref=selected.dataset.ref,month=data.month;if(!await confirmAction(`This cell contains a formula. Editing ${ref} may affect other calculations. Unlock and edit this cell?`))return;try{await request('unlock',{ref});if(loading||data.month!==month||!selected)return;grants.add(ref);select(selected);bar.focus();}catch(e){status.textContent=e.message;}});
- bar.addEventListener('keydown',async e=>{if(e.key==='Escape'&&selected)select(selected);if(e.key!=='Enter'||bar.readOnly||!selected)return;const ref=selected.dataset.ref,m=data.metadata[ref];if(m.classification==='formula'){if(!bar.value.startsWith('=')){status.textContent='Enter an Excel formula beginning with =.';return;}data.formulas[ref]=bar.value;}else{setManualValue(ref,bar.value);select(selected);selected.querySelector('input').value=bar.value;}await recalculate();});
+ function setWorksheetUnlocked(unlocked){
+  worksheetUnlocked=unlocked;
+  showUnlockState(unlocked);
+  if(selected)select(selected);
+ }
+ function clearManualHistory(){
+  manualHistory.clear();
+  undoFormula.hidden=true;
+ }
+ function openFormulaEditor(cell,replacement){
+  if(!cell?.hasAttribute('data-original-formula-editable')||!canEditCell(cell)||loading||saving||exporting)return false;
+  if(selected!==cell)select(cell,true);
+  bar.focus();
+  if(replacement!==undefined){bar.value=replacement;editingRef=cell.dataset.ref;}
+  return true;
+ }
+ table.addEventListener('dblclick',e=>openFormulaEditor(e.target.closest('[data-original-formula-editable]')));
+ table.addEventListener('keydown',e=>{
+  const cell=e.target.closest('[data-original-formula-editable]');
+  if(e.target!==cell)return;
+  if(e.key==='F2'||e.key==='Enter'||(e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey)){
+   if(openFormulaEditor(cell,e.key.length===1?e.key:undefined))e.preventDefault();
+  }
+ });
+ function commitFormula(ref,content,editToken){
+  const version=++sequence;
+  pending=pending.catch(()=>{}).then(async()=>{
+   const result=await request(editToken?'undo-formula':'edit-formula',{ref,content,editToken});
+   data.formulas=result.formulas;
+   data.formulaAudit=result.formulaAudit;
+   if(editToken)manualHistory.commit('undo');
+   else if(result.editToken)manualHistory.record({ref,before:null,after:result.editToken});
+   undoFormula.hidden=!manualHistory.peek('undo');
+   if(result.changed){dirty=true;setRestoreRecovery(null);}
+   sqlIndicators();
+   if(version===sequence)renderCalculation(result.calculation);
+   if(selected&&!editingRef)select(selected,true);
+   status.classList.remove('error');
+   if(dirty)status.textContent='Unsaved changes';
+  }).catch(e=>{
+   if(e.message.startsWith('Unlock Formulas'))setWorksheetUnlocked(false);
+   status.textContent=e.message;
+   status.classList.add('error');
+  });
+  return pending;
+ }
+ function commitFormulaBuffer(){
+  if(!editingRef)return;
+  const ref=editingRef;
+  const content=bar.value;
+  editingRef=null;
+  return commitFormula(ref,content);
+ }
+ bar.addEventListener('input',()=>{
+  if(selected?.hasAttribute('data-original-formula-editable')&&canEditCell(selected))editingRef=selected.dataset.ref;
+ });
+ bar.addEventListener('blur',commitFormulaBuffer);
+ bar.addEventListener('keydown',async e=>{
+  if(e.key==='Escape'&&selected){editingRef=null;select(selected);return;}
+  if(e.key!=='Enter'||bar.readOnly||!selected)return;
+  e.preventDefault();
+  if(selected.hasAttribute('data-original-formula-editable')){editingRef=null;await commitFormula(selected.dataset.ref,bar.value);return;}
+  const ref=selected.dataset.ref;
+  setManualValue(ref,bar.value);select(selected);
+  selected.querySelector('input').value=bar.value;
+  await recalculate();
+ });
+ unlock.addEventListener('click',async()=>{
+  if(changingLock||loading||saving||exporting)return;
+  changingLock=true;
+  try{
+   if(!worksheetUnlocked&&!await confirmAction('This will allow manual editing of all Excel-based formula cells in the current reporting worksheet.',{formulaUnlock:true}))return;
+   await pending;
+   const result=await request(worksheetUnlocked?'lock-formulas':'unlock');
+   setWorksheetUnlocked(result.unlocked);
+   status.classList.remove('error');
+  }catch(e){status.textContent=e.message;status.classList.add('error');}
+  finally{changingLock=false;}
+ });
+ undoFormula.addEventListener('click',()=>{
+  const command=manualHistory.peek('undo');
+  if(command&&!loading&&!saving&&!exporting)void commitFormula(command.ref,undefined,command.after);
+ });
+ document.querySelector('#report-formula-history').addEventListener('click',()=>{
+  const list=document.querySelector('#report-formula-history-list');
+  list.replaceChildren();
+  for(const event of [...data.formulaAudit].reverse()){
+   const item=document.createElement('li'),title=document.createElement('strong'),content=document.createElement('div');
+   title.textContent=[event.period,event.sheet+'!'+event.cell,event.action,event.timestamp,event.editor].filter(Boolean).join(' / ');
+   content.textContent=event.previousFormula+' '+String.fromCharCode(8594)+' '+event.newFormula;
+   item.append(title,content);list.append(item);
+  }
+  document.querySelector('#report-formula-history-empty').hidden=list.childElementCount>0;
+  document.querySelector('#report-formula-history-dialog').showModal();
+ });
  const saveButton=document.querySelector('#save'),exportButton=document.querySelector('#report-export');
  saveButton.addEventListener('click',async()=>{
   if(saving||loading||exporting)return;
@@ -168,10 +323,8 @@
   },
   applySqlResult(result){setRestoreRecovery(null);
    data.values=result.values??data.values;data.formulas=result.formulas??data.formulas;
-   for(const ref of Object.keys(data.sqlReplacements))grants.delete(ref);
    data.sqlReplacements=result.sqlReplacements??data.sqlReplacements;
    data.sqlSources=result.sqlSources??data.sqlSources;
-   for(const ref of Object.keys(data.sqlReplacements))grants.delete(ref);
    dirty=true;
    status.textContent='SQL values applied · Unsaved changes';
    if(result.previewContext){
@@ -226,7 +379,7 @@
     setRestoreRecovery({...before,token:undoToken});
     dirty=dirty||draftChanged;
    }
-   grants.clear();
+   clearManualHistory();
    sqlIndicators();
    renderCalculation(calculation,true);
    if(selected)select(selected);
@@ -256,9 +409,12 @@
   if(restoreRecovery&&!loading&&!saving&&!exporting)void rebuildReport(true);
  });
  document.addEventListener('keydown',e=>{
-  if(!(e.ctrlKey||e.metaKey)||e.altKey||e.shiftKey||e.key.toLowerCase()!=='z'||e.target.closest('dialog, input:not([readonly]), textarea, [contenteditable="true"]')||!restoreRecovery||loading||saving||exporting)return;
+  if(!(e.ctrlKey||e.metaKey)||e.altKey||e.shiftKey||e.key.toLowerCase()!=='z'||e.target.closest('dialog, input:not([readonly]), textarea, [contenteditable="true"]')||loading||saving||exporting)return;
+  const manual=manualHistory.peek('undo');
+  if(!manual&&!restoreRecovery)return;
   e.preventDefault();
-  void rebuildReport(true);
+  if(manual)void commitFormula(manual.ref,undefined,manual.after);
+  else void rebuildReport(true);
  });
  const yearSelector=document.querySelector('#report-year'),monthSelector=document.querySelector('#report-month');
  const overlay=document.querySelector('#report-loading-overlay'),retry=document.querySelector('#report-retry');
@@ -277,13 +433,14 @@
   if(active){document.querySelector('#loading-title').textContent=title;document.querySelector('#loading-period').textContent=formatPeriod(target);}
   viewport.setAttribute('aria-busy',String(active));
   for(const section of content)section.inert=active;
-  for(const control of [yearSelector,monthSelector,exportButton,saveButton,document.querySelector('#sql-settings-open')])control.disabled=active;
+  for(const control of [yearSelector,monthSelector,exportButton,saveButton,unlock,document.querySelector('#sql-settings-open')])control.disabled=active;
  }
  async function loadPeriod(target){
   if(loading)return;
   if(!target||target===data.month||saving||exporting||settings.open){syncSelectors(data.month);return;}
   if(dirty&&!await confirmAction('Discard unsaved report changes and switch reporting periods?')){syncSelectors(data.month);return;}
   const version=++loadSequence;
+  clearFormulaReferences();
   retry.hidden=true;syncSelectors(target);setLoading(true,target);
   try{
    await pending;
@@ -294,9 +451,9 @@
    Object.assign(data,result);
    syncSelectors(target);
    selectRowLabel(null);
-   grants.clear();selected?.classList.remove('selected');selected=null;
+   setWorksheetUnlocked(false);clearManualHistory();selected?.classList.remove('selected');selected=null;
    document.querySelector('#selection').textContent='Select a cell';document.querySelector('#cell-kind').textContent='Formula cells protected';
-   bar.value='';bar.readOnly=true;unlock.disabled=true;setRestoreRecovery(null);notifyRestore('');
+   bar.value='';bar.readOnly=true;setRestoreRecovery(null);notifyRestore('');
    dirty=false;sqlIndicators();renderCalculation(result.calculation,true);
    const label=formatPeriod(target);periodLabel.textContent=label;table.setAttribute('aria-label',label+' KWH purchased, sold and system losses');
    const url=new URL(location.href);url.searchParams.set('month',target);history.replaceState(null,'',url);

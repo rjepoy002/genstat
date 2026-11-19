@@ -127,6 +127,10 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   console.log('PASS: identical configurations avoid redundant history; new versions and restore are preserved; restore requires testing; disable is confirmed and retains history/values; viewing/testing disabled settings never enables them, successful Apply & Save does.');
   await page.locator('#sql-settings-close').click();const draft=path.join(root,'storage',`base-report-${beforeSource}-202607.json`);assert(!fs.existsSync(draft));await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#status').textContent==='Draft saved');const saved=JSON.parse(fs.readFileSync(draft,'utf8'));assert.equal(saved.sqlReplacements.F18.value,'1201329');assert.equal(saved.values.G18,'1201329');await page.reload();assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');
   const fresh=await browser.newContext(),freshPage=await fresh.newPage();await freshPage.goto(baseUrl+'/base-report.php?month=202607');assert.equal(await freshPage.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');await fresh.close();await page.locator('td[data-ref="F18"]').focus();const restore=page.locator('#restore-sql'),restoreTooltip=page.locator('#restore-sql-tooltip');
+  assert.equal(await page.locator('#genstat-report-table [data-formula-reference]').count(),0);
+  assert.equal(await page.locator('td[data-ref="F18"][data-active-formula]').count(),0);
+  assert.equal(await page.locator('td[data-ref="F18"]').evaluate(cell=>cell.closest('tr').querySelector('th[scope="row"]').textContent),'18');
+  assert.equal(await page.locator('[data-excel-heading-column="F"]').textContent(),'F');
   assert(await restore.isEnabled());
   for(const [width,theme] of [[1440,'light'],[320,'dark']]){
    await page.setViewportSize({width,height:1000});
@@ -141,6 +145,8 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await page.mouse.move(0,0);
   assert(await restoreTooltip.isHidden());
   await page.locator('#formula').focus();
+  await page.keyboard.press('Tab');
+  assert(await page.locator('#unlock').evaluate(button=>button===document.activeElement));
   await page.keyboard.press('Tab');
   assert(await restore.evaluate(button=>button===document.activeElement&&button.matches(':focus-visible')));
   assert(await restoreTooltip.isVisible());
@@ -358,8 +364,18 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.match(highlightedSql.badge,/SQL/);
   assert.equal(highlightedSql.color,sqlBackground);
   assert.equal(highlightedSql.border,true);
+  await totalToggle.click();
+  await periodPage.locator('td[data-ref="Q11"]').focus();
+  assert(await periodPage.locator('#genstat-report-table [data-formula-reference]').count()>0);
+  const periodUnlock=periodPage.locator('#unlock');
+  await periodUnlock.click();
+  await periodPage.locator('#report-confirmation').getByRole('button',{name:'Unlock Formulas',exact:true}).click();
+  await periodPage.waitForFunction(()=>document.querySelector('#unlock').getAttribute('aria-pressed')==='true');
   await periodPage.locator('#report-year').selectOption('2026');
   await periodPage.waitForURL(reportUrl+'?month=202609');
+  assert.equal(await periodUnlock.getAttribute('aria-pressed'),'false');
+  assert.equal(await periodPage.locator('#genstat-report-table [data-formula-reference]').count(),0);
+  await totalToggle.click();
   assert.equal(await periodLabelToggle.getAttribute('aria-pressed'),'false');
   await periodLabelToggle.click();
   await periodPage.locator('#report-month').selectOption('202608');
@@ -372,6 +388,8 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await periodPage.waitForURL(reportUrl+'?month=202709');
   assert.equal(requested,requestsBeforeYearChange+1);
   assert.equal(await periodPage.locator('#report-month').inputValue(),'202709');
+  assert.equal(await periodPage.locator('tr[data-excel-row="18"] th[scope="row"]').textContent(),'18');
+  assert.equal(await periodPage.locator('[data-excel-heading-column="F"]').textContent(),'F');
   await page.goto(july);
   await open();
   const rowSelection = page.locator('#sql-row');

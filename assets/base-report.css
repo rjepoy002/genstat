@@ -15,10 +15,10 @@ header strong{font-size:16px;white-space:nowrap}header strong span{color:#147891
 button{font:inherit;padding:4px 9px;border:1px solid #c8d2de;border-radius:3px;background:#fff;color:#24445f;cursor:pointer;white-space:nowrap}button:hover:not(:disabled){background:#edf5fa}button:disabled{cursor:default;color:#94a0ac}header a{margin-left:auto;color:#315c70;font-size:11px}
 .formula-bar{display:flex;gap:8px;padding:3px 12px;background:#fff;align-items:center;flex-shrink:0}.formula-bar output{min-width:75px;font-size:11px}.formula-bar input{flex:1;min-width:0;height:25px;font:12px Arial,sans-serif;padding:3px 6px;border:1px solid #cbd5df;border-radius:2px}
 body>header{position:relative;z-index:2}
-.report-toolbar .report-icon{position:relative;flex:none;padding:0;color:#475569;border-color:#e2e8f0}
-.report-toolbar .report-icon:hover:not(:disabled){background:#f1f5f9;color:#0f172a}
-.report-toolbar .report-icon:disabled{color:#94a3b8}
-.report-toolbar .report-icon:focus-visible{outline:2px solid #3978b6;outline-offset:1px}
+:is(.report-toolbar,.formula-bar) .report-icon{position:relative;flex:none;padding:0;color:#475569;border-color:#e2e8f0}
+:is(.report-toolbar,.formula-bar) .report-icon:hover:not(:disabled){background:#f1f5f9;color:#0f172a}
+:is(.report-toolbar,.formula-bar) .report-icon:disabled{color:#94a3b8}
+:is(.report-toolbar,.formula-bar) .report-icon:focus-visible{outline:2px solid #3978b6;outline-offset:1px}
 .report-icon svg{width:16px;height:16px}
 .report-icon[data-tooltip]::after{position:absolute;top:calc(100% + 6px);right:0;z-index:3;white-space:nowrap;padding:4px 7px;border-radius:4px;background:#173650;color:white;font:11px/1.4 Arial,sans-serif;visibility:hidden;pointer-events:none}
 .report-icon[data-tooltip]::after{content:attr(data-tooltip)}
@@ -45,12 +45,13 @@ th,td{position:relative;overflow:hidden;min-width:0;padding:2px 5px!important;he
 td{font-weight:normal}
 #genstat-report-table th{color:#fff!important;font-weight:var(--font-weight-semibold,600)!important;position:sticky;top:0;z-index:3;background:#173650!important;padding:2px 8px!important;border-right-color:#426078!important;border-bottom-color:#426078!important;text-align:center!important;line-height:15px}
 #genstat-report-table th[rowspan="2"],#genstat-report-table thead tr:last-child th{border-bottom:2px solid #64809a!important}
-#genstat-report-table thead tr:nth-child(2) th{top:var(--header-height)}
+#genstat-report-table thead tr[data-excel-row] th{top:var(--excel-heading-height)}
+#genstat-report-table thead tr[data-excel-row]:last-child th{top:calc(var(--excel-heading-height) + var(--header-height))}
 #genstat-report-table th[rowspan="2"] .value{white-space:pre-line}
 table[data-total-collapsed="true"] :is(th,td).total-column,
 table[data-total-collapsed="true"] col[data-total-column]{display:none}
 td:not(.particulars){text-align:right!important;font-variant-numeric:tabular-nums}
-td.particulars,#genstat-report-table th.particulars{position:sticky;left:0;z-index:2;text-align:left!important}#genstat-report-table th.particulars{z-index:4}
+td.particulars,#genstat-report-table th.particulars{position:sticky;left:var(--excel-gutter,0px);z-index:2;text-align:left!important}#genstat-report-table th.particulars{z-index:4}
 .particulars .value{white-space:normal;overflow-wrap:anywhere}
 .report-row-toggle{padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:inherit}
 .report-row-toggle:hover:not(:disabled){background:transparent}
@@ -74,9 +75,9 @@ td[data-classification="database_input"]{background:#edf8fc!important}
 #genstat-report-table tbody .spacer-row{height:5px}#genstat-report-table tbody .spacer-row td{height:5px;line-height:0;padding:0!important;border-bottom:0!important}.spacer-row .value{display:none}
 td input{position:absolute;inset:0;width:100%;height:100%;font:inherit;text-align:inherit;font-variant-numeric:tabular-nums;color:inherit;background:inherit;border:0;padding:2px var(--report-cell-padding,7px);opacity:0}
 td:focus-within input{opacity:1}td:focus-within input+.value{visibility:hidden}
-td:focus,th:focus,td.selected,th.selected{outline:2px solid #078b89;outline-offset:-2px}td.selected[data-classification="formula"]{outline-color:#566dcc;background:#edf0ff!important}
+td:focus,th:focus,td.selected,th.selected{outline:2px solid #078b89;outline-offset:-2px}
 footer{padding:3px 12px;color:#526b80;font-size:10px;flex-shrink:0}.error{color:#a32a20}
-td[data-sql-applied="true"]{background:#e7f5f1!important}td[data-sql-applied="true"] .value::before{content:'SQL ';font-size:8px;color:#087565}.formula-bar{flex-wrap:wrap}.formula-bar input{min-width:100px}
+td[data-sql-applied="true"]{background:#e7f5f1!important}td[data-sql-applied="true"] .value::before{content:'SQL ';font-size:8px;color:#087565}.formula-bar{flex-wrap:wrap}.report-formula-field{min-width:100px}
 
 @media(max-width:700px){header{gap:6px;padding:5px 8px}header>span{font-size:10px}header a{font-size:10px}.formula-bar{gap:5px;padding:3px 6px}.formula-bar output{min-width:45px}.formula-bar button{padding:5px}.report-notice{font-size:11px;padding-inline:6px}.report-scroll{margin:2px 4px}table{font-size:12px}tr{height:25px}.spacer-row{height:5px}th,td{line-height:17px}footer{padding:3px 6px}}
 
@@ -90,8 +91,8 @@ html.dark body{background:var(--report-app);color:var(--report-text)}
 html.dark :is(body>header,.formula-bar,.report-scroll){background:var(--report-surface);border-color:var(--report-border)}
 html.dark :is(.report-month select,.formula-bar input,button){background:var(--report-elevated);color:var(--report-text);border-color:var(--report-border)}
 html.dark button:hover:not(:disabled){background:#334155}
-html.dark .report-toolbar .report-icon{color:var(--report-muted);border-color:var(--report-border)}
-html.dark .report-toolbar .report-icon:hover:not(:disabled){color:#fff;background:#334155}
+html.dark :is(.report-toolbar,.formula-bar) .report-icon{color:var(--report-muted);border-color:var(--report-border)}
+html.dark :is(.report-toolbar,.formula-bar) .report-icon:hover:not(:disabled){color:#fff;background:#334155}
 html.dark .report-row-toggle,html.dark .report-row-toggle:hover:not(:disabled){background:transparent;color:inherit}
 html.dark button:disabled{color:#a5b4c8}
 html.dark :is(footer,header strong span){color:var(--report-muted)}
@@ -105,9 +106,40 @@ html.dark .error{color:#fda4af}
 :is(html.dark #genstat-report-table,.appearance-preview[data-theme="dark"]) td[data-sql-applied="true"]{background:#14473f!important;color:#ecfdf5!important}
 :is(html.dark #genstat-report-table,.appearance-preview[data-theme="dark"]) td[data-sql-applied="true"] .value::before{color:#99f6e4}
 :is(html.dark #genstat-report-table,.appearance-preview[data-theme="dark"]) tr[data-row-selected]:not(.total-row)>td:not(.particulars,.total-column,[data-sql-applied],[data-classification="database_input"],[style*="background-color"]){background:#263f65!important}
-[data-theme="dark"] #genstat-report-table td.selected[data-classification="formula"]:not([data-sql-applied]){outline-color:#a5b4fc}
 .appearance-preview[data-theme="dark"]{background:var(--report-surface);color:var(--report-text)}
 .appearance-preview[data-theme="light"]{color:#24394e}
 html.dark #genstat-report-table :is(td,th):focus,html.dark .report-row-toggle:focus-visible{outline-color:#60a5fa}
 #genstat-report-table td[data-calculation-error]{color:#a32a20!important}
 html.dark #genstat-report-table td[data-calculation-error]{color:#fda4af!important}
+
+.report-formula-field input{width:100%}
+#report-formula-colors{display:none;inset:1px;color:inherit;font:12px/23px Arial,sans-serif;padding-inline:6px}
+.report-formula-field[data-color-formula] input:not(:focus){color:transparent}
+.report-formula-field[data-color-formula] input:not(:focus)+#report-formula-colors{display:block}
+#report-formula-colors span{color:color-mix(in srgb,var(--formula-token-color) 78%,#111827)}
+.dark #report-formula-colors span{color:color-mix(in srgb,var(--formula-token-color) 65%,white)}
+#genstat-report-table [data-formula-reference]::before{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;box-shadow:inset 0 2px var(--formula-ref-top,transparent),inset -2px 0 var(--formula-ref-right,transparent),inset 0 -2px var(--formula-ref-bottom,transparent),inset 2px 0 var(--formula-ref-left,transparent)}
+#genstat-report-table td[data-active-formula]{outline:2px dashed #334155;outline-offset:-3px}
+.dark #genstat-report-table td[data-active-formula]{outline-color:#e2e8f0}
+
+#genstat-report-table{--excel-gutter:36px;--excel-heading-height:24px}
+#genstat-report-table col.excel-gutter{width:var(--excel-gutter)}
+#genstat-report-table .excel-column-heading{height:var(--excel-heading-height)}
+#genstat-report-table th.excel-coordinate{background:#f1f5f9!important;color:#475569!important;border-color:#cbd5e1!important;font-size:11px!important;font-weight:500!important;text-align:center!important}
+.dark #genstat-report-table th.excel-coordinate{background:#273449!important;color:#e2e8f0!important;border-color:#475569!important}
+#genstat-report-table th.excel-row-heading{left:0;width:var(--excel-gutter);z-index:5;padding-inline:2px!important}
+#genstat-report-table tbody th.excel-row-heading{top:auto;z-index:3}
+#genstat-report-table .excel-column-heading th{top:0;z-index:6}
+#genstat-report-table .excel-column-heading [data-excel-heading-column="A"]{left:var(--excel-gutter);z-index:7}
+#genstat-report-table .excel-column-heading .excel-row-heading{z-index:8}
+[data-excel-headings="off"] #genstat-report-table{--excel-gutter:0px;--excel-heading-height:0px}
+[data-excel-headings="off"] :is(#genstat-report-table col.excel-gutter,#genstat-report-table [data-excel-heading]),
+.appearance-preview[data-excel-headings="off"] [data-excel-heading],
+#genstat-report-table :is(col,td,th)[hidden]{display:none!important}
+
+#unlock svg[hidden]{display:none}
+#unlock::after{width:max-content;max-width:min(240px,calc(100vw - 110px));white-space:normal;z-index:5}
+
+#genstat-report-table[data-formulas-unlocked] td[data-original-formula-editable]:not([data-sql-applied]){cursor:text}
+#genstat-report-table [data-manual-formula-override] .value::after{content:' *';color:#a15c07;font-weight:bold}
+.dark #genstat-report-table [data-manual-formula-override] .value::after{color:#fbbf24}

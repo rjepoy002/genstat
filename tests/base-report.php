@@ -19,6 +19,18 @@ $changed=base_report_calculate($l,['B11'=>(string)((float)$s['cells']['B11']['va
 base_expect(abs($changed['cells']['Q11']['value']-$calc['cells']['Q11']['value']-100)<1e-7,'Editing B11 recalculates Q11 by exactly 100');
 base_expect(abs($changed['cells']['B15']['value']-$calc['cells']['B15']['value']-100)<1e-7,'Editing B11 recalculates dependent purchased total B15');
 try{base_report_validate($l,['Q11'=>'1']);throw new RuntimeException('Formula overwrite accepted');}catch(InvalidArgumentException $e){echo 'PASS: Formula overwrite rejected'.PHP_EOL;}
+require_once __DIR__.'/../lib/base-report-export.php';
+$manual=['F18'=>'123'];$manualCalc=base_report_calculate($l,[],$manual);
+base_expect((float)$manualCalc['cells']['F18']['value']===123.0&&
+ abs($manualCalc['cells']['Q18']['value']-$calc['cells']['Q18']['value']-(123-$calc['cells']['F18']['value']))<1e-7,'Numeric formula replacement recalculates its worksheet dependents');
+$package=base_report_export($l,[],$manual,[],$manualCalc);
+$temporaryExport=tempnam(sys_get_temp_dir(),'genstat-export-');
+try{
+ file_put_contents($temporaryExport,$package);
+ $sheetDoc=xml_doc(zip_text(zip_read($temporaryExport),$s['path']));
+}finally{unlink($temporaryExport);}
+$xpath=xml_path($sheetDoc);
+base_expect($xpath->query('//s:c[@r="F18"]/s:f')->length===0&&(float)$xpath->query('//s:c[@r="F18"]/s:v')->item(0)->textContent===123.0,'Numeric formula replacement exports as a numeric Excel cell');
 base_expect(hash_file('sha256',$source)===$hash,'Source workbook unchanged');
 $fullEngine=new FormulaEngine($l);$fullEngine->results();
 $report=['sourceHash'=>$hash,'range'=>$l['report']['range'],'formulasPreserved'=>$count,'wholeWorksheetFormulas'=>count($formulas),'databaseInputs'=>count($db),'editableNonFormulaCells'=>$editable,'manualOtherCells'=>$editable-count($db),'cachedMatches'=>$matched,'differences'=>$mismatches,'warnings'=>$calc['warnings'],'errors'=>$calc['errors'],'wholeWorksheetWarnings'=>$fullEngine->warnings,'wholeWorksheetErrors'=>$fullEngine->errors,'databaseInputCells'=>$db];

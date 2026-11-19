@@ -36,6 +36,18 @@ try{
  await formula.click();const original=await editor.inputValue();await formula.dblclick();assert(await dialog.evaluate(e=>e.open));assert.equal(await page.locator('#formula-unlock-title').textContent(),'Formula Protected');assert((await dialog.textContent()).includes('This cell contains a formula. Editing it may affect other calculations. Do you wish to unlock and edit this cell?'));
  await page.locator('#formula-unlock-cancel').click();assert.equal(await editor.inputValue(),original);assert(await editor.evaluate(e=>e.readOnly));
  console.log('PASS: formula edit attempt shows exact confirmation text; Cancel preserves original formula and protection');
+ const lock=page.locator('#formula-unlock'),history=page.locator('#formula-history');
+ assert.equal(await lock.innerText(),'');
+ await lock.click();
+ await dialog.getByRole('button',{name:'Unlock & Edit'}).click();
+ await page.waitForFunction(()=>!document.querySelector('#formula-text').readOnly);
+ assert(await lock.locator('[data-lock-icon="open"]').isVisible());
+ assert.match(await lock.getAttribute('title'),/^Lock Formula/);
+ await lock.click();
+ assert(await lock.locator('[data-lock-icon="closed"]').isVisible());
+ assert(await editor.evaluate(el=>el.readOnly));
+ assert.equal(await editor.inputValue(),original);
+ assert(fs.readFileSync(draft).equals(seedDraft));
  async function unlock(){await formula.dblclick();await page.locator('#formula-unlock-form button[type="submit"]').click();await page.waitForFunction(()=>!document.querySelector('#formula-text').readOnly);}
  await unlock();assert.equal(await editor.inputValue(),original);await editor.fill('=B11+2');await editor.press('Escape');assert(await editor.evaluate(e=>e.readOnly));assert.equal(await formula.evaluate(e=>e.classList.contains('pending-change')),false);
  await unlock();await editor.fill('=B11+2');await editor.press('Enter');assert(await editor.evaluate(e=>e.readOnly));assert(await formula.evaluate(e=>e.classList.contains('pending-change')));assert(fs.readFileSync(draft).equals(seedDraft));
@@ -45,6 +57,21 @@ try{
  console.log('PASS: unlock is cell-specific, Escape cancels buffer, Enter marks a pending change and relocks, Undo cancels before save');
  await unlock();await editor.fill('=ROUND(37/3,2)');await editor.press('Enter');
  const beforeSave=fs.readFileSync(active);await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Draft saved'),{},{timeout:60000});assert.equal(JSON.parse(fs.readFileSync(draft)).formulas.Q11,'=ROUND(37/3,2)');assert(fs.readFileSync(active).equals(beforeSave));
+ const auditDialog=page.locator('#formula-history-dialog');
+ const historyTooltip='Formula Edit History — View recorded formula changes.';
+ assert.equal(await history.innerText(),'');
+ await history.hover();
+ assert.equal(await history.evaluate(el=>getComputedStyle(el,'::after').visibility),'visible');
+ await page.locator('#formula-unlock').focus();
+ await page.keyboard.press('Tab');
+ assert.equal(await history.evaluate(el=>el===document.activeElement),true);
+ assert.equal(await history.evaluate(el=>getComputedStyle(el,'::after').visibility),'visible');
+ assert.equal(await history.getAttribute('title'),historyTooltip);
+ await page.keyboard.press('Enter');
+ assert(await auditDialog.isVisible());
+ assert.match(await auditDialog.locator('#formula-history-list').textContent(),/Q11.*=ROUND\(37\/3,2\)/);
+ await page.keyboard.press('Escape');
+ assert(await auditDialog.isHidden());
  await ready();await formula.click();assert.equal(await editor.inputValue(),'=ROUND(37/3,2)');assert(await editor.evaluate(e=>e.readOnly));assert(await page.locator('input[data-ref="AG99"]').isEnabled());
  console.log('PASS: confirmed formula change persists in draft without replacing source workbook before sync; reload preserves editing and relocks formulas');
  // Save a label and blank; autosave must preserve formula overlays.

@@ -12,6 +12,7 @@
  let calculationErrors=0,unlockedCell=null,unlockTarget=null,autosaveTimer=null;
  let savedFormulaOverrides={},draftValues={},pendingFormulaRefs=new Set();
  const editHistory=new window.GenstatEditHistory(50);
+ let formulaAudit=[];
  let historyConfirmation=null,resyncPreparing=false,unlockSubmitting=false,resyncGeneration=0;
  const protectedFormula=ref=>sourceFormulas[ref]??(typeof savedFormulaOverrides[ref]==='string'&&savedFormulaOverrides[ref].startsWith('=')?savedFormulaOverrides[ref]:null);
  const hasOverride=ref=>Object.prototype.hasOwnProperty.call(formulaOverrides,ref);
@@ -114,11 +115,20 @@
   for(const cell of document.querySelectorAll('.cell.formula')){const ref=cell.dataset.ref;cell.classList.toggle('pending-change',(formulaOverrides[ref]??null)!==(savedFormulaOverrides[ref]??null));}
   document.getElementById('formula-undo').disabled=busy||!ready||!editHistory.peek('undo');
   document.getElementById('cell-redo').disabled=busy||!ready||!editHistory.peek('redo');
+  const unlocked=Boolean(unlockedCell);
+  const action=unlocked?'Lock Formula':'Unlock Formula';
+  const tooltip=action+(unlocked?' — Protect the selected Excel formula cell from further editing.':' — Allow manual editing of the selected Excel formula cell.');
+  unlockButton.setAttribute('aria-pressed',String(unlocked));
+  unlockButton.setAttribute('aria-label',action);
+  unlockButton.title=unlockButton.dataset.tooltip=tooltip;
+  unlockButton.querySelector('[data-lock-icon="closed"]').toggleAttribute('hidden',unlocked);
+  unlockButton.querySelector('[data-lock-icon="open"]').toggleAttribute('hidden',!unlocked);
   mode.textContent=unlockedCell?'Editing '+unlockedCell:'Formula cells protected';
   document.body.classList.toggle('formula-editing-active',Boolean(unlockedCell));
  }
  function scheduleAutosave(){clearTimeout(autosaveTimer);autosaveTimer=setTimeout(async()=>{if(!ready||!dirty||unlockedCell||pendingFormulaRefs.size||resyncPreparing||document.querySelector('dialog[open]'))return;if(busy){scheduleAutosave();return;}lock(true);try{await save();}catch(e){setStatus(e.message,true);}finally{lock(false);}},1200);}
  function adoptFormulaPayload(d){
+  formulaAudit=Array.isArray(d.formulaAudit)?d.formulaAudit:[];
   const draftStamp=document.getElementById('draft-saved'),draftTime=document.getElementById('draft-saved-at');draftStamp.hidden=!d.savedAt;if(d.savedAt){draftTime.dateTime=d.savedAt;draftTime.textContent=new Date(d.savedAt).toLocaleString();}
   draftValues={...d.values};formulaOverrides={...d.formulas};sourceFormulas={...d.sourceFormulas};savedFormulaOverrides={...formulaOverrides};pendingFormulaRefs.clear();setAuthorization(d.authorization);
   for(const [ref,result] of Object.entries(d.calculation?.cells||{})){
@@ -147,7 +157,8 @@
   if(e.key==='Escape'){e.preventDefault();finishFormulaEdit(true);currentCell?.focus();return;}
   if(e.key==='Enter'&&!formulaText.readOnly){e.preventDefault();finishFormulaEdit();currentCell?.focus();}
  });
- formulaText.addEventListener('blur',()=>{if(unlockedCell)finishFormulaEdit();});
+ formulaText.addEventListener('blur',e=>{if(unlockedCell&&e.relatedTarget!==unlockButton)finishFormulaEdit();});
+ unlockButton.addEventListener('blur',e=>{if(unlockedCell&&e.relatedTarget!==formulaText)finishFormulaEdit();});
  formulaText.addEventListener('pointerdown',()=>{if(formulaText.readOnly&&currentCell&&protectedFormula(currentCell.dataset.ref))beginUnlock(currentCell);});
  const unlockDialog=document.getElementById('formula-unlock-dialog'),authError=document.getElementById('formula-auth-error');
  function beginUnlock(cell=currentCell){
@@ -156,7 +167,20 @@
   if(!ready||busy)return;
   unlockTarget=cell;authError.hidden=true;unlockDialog.showModal();
  }
- unlockButton.addEventListener('click',()=>beginUnlock());
+ unlockButton.addEventListener('click',()=>{if(unlockedCell)finishFormulaEdit();else beginUnlock();});
+ document.getElementById('formula-history').addEventListener('click',()=>{
+  const list=document.getElementById('formula-history-list');
+  list.replaceChildren();
+  for(const entry of [...formulaAudit].reverse()){
+   const item=document.createElement('li'),heading=document.createElement('strong'),change=document.createElement('div');
+   heading.textContent=[entry.cell,entry.timestamp,entry.editor].filter(Boolean).join(' · ');
+   const before=entry.previousFormula??entry.originalFormula;
+   change.textContent=[before,entry.newFormula].filter(formula=>formula!=null).join(' → ');
+   item.append(heading,change);list.append(item);
+  }
+  document.getElementById('formula-history-empty').hidden=list.childElementCount>0;
+  document.getElementById('formula-history-dialog').showModal();
+ });
  document.getElementById('formula-unlock-cancel').addEventListener('click',()=>{unlockTarget=null;unlockDialog.close();if(historyConfirmation){historyConfirmation(false);historyConfirmation=null;}});
  unlockDialog.addEventListener('cancel',e=>{if(unlockSubmitting){e.preventDefault();return;}unlockTarget=null;if(historyConfirmation){historyConfirmation(false);historyConfirmation=null;}});
  document.getElementById('formula-unlock-form').addEventListener('submit',async e=>{
@@ -205,7 +229,11 @@
   percent=Math.max(50,Math.min(200,Math.round(percent)));const z=percent/100;
   // Read scroll positions before changing geometry; write the transform once.
   const oldZoom=worksheetZoom,left=zoomViewport.scrollLeft,top=zoomViewport.scrollTop;
-  zoomSheet.style.transform=`scale(${z})`;zoomSize.style.width=`${Number(zoomSheet.dataset.width)*z}px`;zoomSize.style.height=`${Number(zoomSheet.dataset.height)*z}px`;
+  const headings=document.documentElement.dataset.excelHeadings!=='off';
+  zoomSheet.style.transform=`scale(${z})`;
+  zoomSize.style.setProperty('--worksheet-zoom',z);
+  zoomSize.style.width=`${(Number(zoomSheet.dataset.width)-(headings?0:36))*z}px`;
+  zoomSize.style.height=`${(Number(zoomSheet.dataset.height)-(headings?0:24))*z}px`;
   if(anchor){zoomViewport.scrollLeft=(left+anchor.x)/oldZoom*z-anchor.x;zoomViewport.scrollTop=(top+anchor.y)/oldZoom*z-anchor.y;}
   worksheetZoom=z;syncWorksheetHeaders();syncZoomControl(percent);try{sessionStorage.setItem(zoomStorageKey,String(percent));}catch(e){}
  }

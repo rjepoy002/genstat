@@ -11,4 +11,13 @@ assert(refs('=[1]RecovBill26!B12')[0].external);assert(refs("='[GENSTAT_2025.xls
 assert.equal(refs('=SUM(Table1[[#Headers],[A1]],Named_Range,XFE1,LOG10(A1))').length,1);
 assert.equal(refs('=SUM(A1:XFD1048576)').length,1);assert.equal(refs('=A1+A1').length,1);
 assert(refs('=Sheet1:Sheet3!A1')[0].threeD);assert(parse('=SUM(A1','Jun26').error);assert(parse('="A1','Jun26').error);assert(parse('=A1:','Jun26').error);
+const colored=parse('=SUM($A$1:B$2)+A1+$A1+Jun26!A1+"C4"','Jun26');
+assert.deepEqual(colored.occurrences.map(({index})=>index),[0,1,1,1]);
+assert.equal(colored.references.length,2);
+assert.equal(parse('=A1#','Jun26').references.length,0);
+assert(parse('=A1 B2','Jun26').error);
+assert(parse('=A1 Named_Range','Jun26').error);
+assert(parse('=Named_Range A1','Jun26').error);
+assert(parse('=SUM(A:A)','Jun26').error);
+assert(parse('=INDIRECT("B2")+D1','Jun26').unsupported);
 console.log('PASS: single/range/mixed references, nested unsupported functions, string escaping, names, tables, external workbooks, quoted sheets, 3D indicators, large ranges and invalid formulas');

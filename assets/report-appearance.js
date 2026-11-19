@@ -1,8 +1,8 @@
 'use strict';
 (()=>{
  const key='genstat:appearance:v1';
- const defaults={theme:'system',rowHeight:36,fontSize:12,columnSpacing:'comfortable',selectionBorderWidth:2,selectionBorderColor:'#2563EB'};
- const options={theme:['system','light','dark'],rowHeight:[28,36,44],fontSize:[11,12,13,14],columnSpacing:['compact','comfortable'],selectionBorderWidth:[2,3]};
+ const defaults={showHeadings:'on',theme:'system',rowHeight:36,fontSize:12,columnSpacing:'comfortable',selectionBorderWidth:2,selectionBorderColor:'#2563EB'};
+ const options={showHeadings:['on','off'],theme:['system','light','dark'],rowHeight:[28,36,44],fontSize:[11,12,13,14],columnSpacing:['compact','comfortable'],selectionBorderWidth:[2,3]};
  const system=matchMedia('(prefers-color-scheme: dark)');
  const root=document.documentElement;
  function validated(input){
@@ -18,6 +18,7 @@
   target.classList.toggle('dark',dark);
   target.dataset.theme=dark?'dark':'light';
   target.style.colorScheme=target.dataset.theme;
+  target.dataset.excelHeadings=settings.showHeadings;
   for(const [name,value] of Object.entries({
    '--report-row-height':settings.rowHeight+'px','--report-font-size':settings.fontSize+'px',
    '--report-cell-padding':settings.columnSpacing==='compact'?'4px':'7px',

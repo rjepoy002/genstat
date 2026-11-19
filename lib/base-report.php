@@ -53,7 +53,7 @@ function base_report_layout(): array {
 function base_report_validate(array $l,array $values,array $formulas=[]): void {
  foreach($values as $ref=>$value){$c=$l['sheets'][0]['cells'][$ref]??null;if(!$c||!$c['editable'])throw new InvalidArgumentException('Protected input: '.$ref);if(!is_string($value)||strlen($value)>32767||str_starts_with($value,'=')||str_contains($value,"\0")||(is_numeric($value)&&!is_finite((float)$value)))throw new InvalidArgumentException('Invalid value: '.$ref);}
  $engine=new FormulaEngine($l);
- foreach($formulas as $ref=>$formula){$c=$l['sheets'][0]['cells'][$ref]??null;if(!$c||$c['classification']!=='formula'||!range_contains($l['report']['range'],$ref))throw new InvalidArgumentException('Unknown formula: '.$ref);if(!is_string($formula))throw new InvalidArgumentException('Invalid formula.');$engine->validate($formula,$l['sheets'][0]['name']);}
+ foreach($formulas as $ref=>$formula){$c=$l['sheets'][0]['cells'][$ref]??null;if(!$c||$c['classification']!=='formula'||!range_contains($l['report']['range'],$ref))throw new InvalidArgumentException('Unknown formula: '.$ref);if(!is_string($formula))throw new InvalidArgumentException('Invalid formula.');if(str_starts_with($formula,'='))$engine->validate($formula,$l['sheets'][0]['name']);elseif(!is_numeric($formula)||!is_finite((float)$formula)||strlen($formula)>32767)throw new InvalidArgumentException('Enter a number or supported Excel formula.');}
 }
 function base_report_calculate(array $l,array $values=[],array $formulas=[],array $replacements=[],array $total=[]): array {
  base_report_validate($l,$values,$formulas);sql_replacement_validate($l,$replacements,$formulas);$s=$l['sheets'][0];
@@ -83,4 +83,36 @@ function base_report_calculate(array $l,array $values=[],array $formulas=[],arra
  }
  $warnings=[];foreach($engine->warnings as $key=>$message){$ref=substr($key,strpos($key,'!')+1);$warnings[]=['cell'=>$key,'formula'=>expanded_formulas($s)[$ref]??null,'message'=>$message];}
  return ['cells'=>$out,'warnings'=>$warnings,'errors'=>$engine->errors];
+}
+
+function base_report_formula_editable(array $layout,string $ref): bool {
+ $sheet=$layout['sheets'][0];
+ return ($sheet['cells'][$ref]['classification']??null)==='formula'
+  &&range_contains($layout['report']['range'],$ref)
+  &&cell_coordinates($ref)[1]>$layout['report']['firstRow']+1
+  &&sql_replacement_cell_allowed($sheet,$ref);
+}
+function base_report_formula_audit(array $layout): array {
+ $path=base_report_draft_path($layout).'.formula-audit.json';
+ if(!is_file($path))return [];
+ $contents=file_get_contents($path);
+ if($contents===false)throw new RuntimeException('Unable to read Formula Edit History.');
+ return json_decode($contents,true,512,JSON_THROW_ON_ERROR);
+}
+function base_report_append_formula_audit(array $layout,int $revision,array $before,array $after,string $action): array {
+ $path=base_report_draft_path($layout);
+ $lock=fopen($path.'.lock','c');
+ if(!$lock||!flock($lock,LOCK_EX))throw new RuntimeException('Unable to lock Formula Edit History.');
+ try{
+  if(base_report_read_draft($layout)['revision']!==$revision)throw new RuntimeException('Another window saved this report. Reload before editing.');
+  $audit=base_report_formula_audit($layout);
+  $sheet=$layout['sheets'][0];$source=expanded_formulas($sheet);
+  foreach(array_keys($before+$after) as $ref){
+   $old=$before[$ref]??$source[$ref]??null;$new=$after[$ref]??$source[$ref]??null;
+   if($old===$new)continue;
+   $audit[]=['period'=>base_report_month($layout),'sheet'=>$sheet['name'],'cell'=>$ref,'previousFormula'=>$old,'newFormula'=>$new,'action'=>$action,'timestamp'=>gmdate('c'),'editor'=>$_SESSION['username']??null,'revision'=>$revision];
+  }
+  atomic_file_write($path.'.formula-audit.json',json_bytes($audit));
+  return $audit;
+ }finally{flock($lock,LOCK_UN);fclose($lock);}
 }

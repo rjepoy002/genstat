@@ -1,8 +1,8 @@
 'use strict';
 ((root)=>{
  root.createGenStatReferenceHighlighter=function(sheet,sheetName,note){
-  const cols=[...sheet.querySelectorAll('.col-heading')].map(el=>({n:[...el.textContent].reduce((n,c)=>n*26+c.charCodeAt(0)-64,0),start:parseFloat(el.style.left),size:parseFloat(el.style.width)}));
-  const rows=[...sheet.querySelectorAll('.row-heading')].map(el=>({n:Number(el.textContent),start:parseFloat(el.style.top),size:parseFloat(el.style.height)}));
+  const cols=[...sheet.querySelectorAll('.col-heading')].map(el=>({n:Number(el.dataset.column),start:parseFloat(el.style.left),size:parseFloat(el.style.width)}));
+  const rows=[...sheet.querySelectorAll('.row-heading')].map(el=>({n:Number(el.dataset.row),start:parseFloat(el.style.top),size:parseFloat(el.style.height)}));
   const layer=document.createElement('div');layer.className='reference-highlights';layer.setAttribute('aria-hidden','true');sheet.append(layer);
   const colors=['#3684c6','#a36ab0','#258b68','#cf8737','#c65d77','#6584a7'];const cache=new Map();let previous=null;
   return {show(formula){
