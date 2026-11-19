@@ -1,9 +1,16 @@
-<dialog id="sql-settings-dialog" class="sql-modal rounded-2xl border-0 bg-slate-50 p-0 text-slate-800" aria-labelledby="sql-settings-title">
- <div class="sql-dialog-header sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4">
-  <div><p class="m-0 mb-1 text-xs font-semibold uppercase tracking-widest text-teal-700">Reporting configuration</p><h2 id="sql-settings-title" class="m-0 text-xl font-semibold tracking-tight text-slate-900">SQL Query Settings</h2><p id="sql-context" class="m-0 mt-1 text-xs text-slate-500"></p></div>
-  <button id="sql-settings-close" type="button" class="close-settings" aria-label="Close SQL Query Settings" title="Close">&#10005;</button>
+<dialog id="sql-settings-dialog" class="sql-modal rounded-2xl border-0 bg-slate-50 p-0 text-slate-800 dark:text-slate-50" aria-labelledby="sql-settings-title">
+ <div class="sticky top-0 z-10 bg-white dark:bg-slate-800">
+ <div class="sql-dialog-header flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-600 dark:bg-slate-800">
+  <div><p class="m-0 mb-1 text-xs font-semibold uppercase tracking-widest text-teal-700">GENSTAT</p><h2 id="sql-settings-title" class="m-0 text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">Settings</h2><p id="sql-context" class="m-0 mt-1 text-xs text-slate-500"></p></div>
+  <button id="sql-settings-close" type="button" class="close-settings" aria-label="Close Settings" title="Close">&#10005;</button>
  </div>
- <div class="space-y-4 p-4 sm:p-5">
+ <nav class="flex flex-wrap gap-2 border-b border-slate-200 px-4 py-2 dark:border-slate-600" aria-label="Settings sections">
+  <button id="settings-reporting-tab" type="button" aria-controls="settings-reporting" aria-pressed="true">Reporting Configuration</button>
+  <button id="settings-appearance-tab" type="button" aria-controls="settings-appearance" aria-pressed="false">Appearance</button>
+ </nav>
+ </div>
+ <div id="settings-reporting" class="space-y-4 p-4 sm:p-5">
+  <h3 class="m-0 text-lg font-semibold">SQL Query Settings</h3>
   <p id="sql-message" class="m-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs" role="status" aria-live="polite">Loading settings...</p>
   <div id="sql-recovery-panel" class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs" hidden><p class="m-0 mb-2">A previous Apply &amp; Save result can be recovered without creating another configuration version. Recovered report values still require Save Draft.</p><button id="sql-recover" type="button">Recover last Apply &amp; Save</button></div>
   <fieldset id="sql-fields" class="m-0 min-w-0 space-y-4 border-0 p-0">
@@ -49,6 +56,7 @@
    <div class="sql-apply-actions flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3"><button id="sql-apply" type="button" class="sql-primary" aria-describedby="sql-apply-reason" disabled>Apply &amp; Save</button><p id="sql-apply-reason" class="m-0 text-xs text-slate-600" role="status" aria-live="polite">Test the SQL query first.</p></div>
   </section>
  </div>
+ <?php require __DIR__.'/report-appearance.php';?>
 </dialog>
 
 <dialog id="sql-apply-loading" class="report-loading-card rounded-2xl text-center shadow-2xl" aria-labelledby="sql-loading-title">

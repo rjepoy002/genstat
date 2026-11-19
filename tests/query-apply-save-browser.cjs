@@ -63,8 +63,9 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await august.locator('#report-month').inputValue(),'202608');
   assert((await august.locator('#status').textContent()).includes('No saved report data'));
   await page.goto(july);assert.equal(await page.locator('input[data-ref="B11"]').inputValue(),'24850653.80');assert.deepEqual(errors,[]);assert(await page.evaluate(()=>Boolean(window.genstatReport)),'Report JavaScript loaded');const recalcPromise=page.waitForResponse(r=>r.url().endsWith('base-report.php')&&r.request().method()==='POST');await page.locator('input[data-ref="B11"]').fill('24850653.84');await page.locator('input[data-ref="B11"]').press('Tab');const recalc=await recalcPromise;assert.equal(recalc.status(),200,(await recalc.text())+' / '+serverLog.slice(-2200));await page.waitForFunction(()=>document.querySelector('#status').textContent==='Unsaved changes');
-  page.once('dialog',dialog=>dialog.dismiss());
   await page.locator('#report-month').selectOption('202608');
+  await page.locator('#report-confirmation').getByRole('button',{name:'Cancel'}).click();
+  await page.waitForFunction(()=>document.querySelector('#report-month').value==='202607');
   assert.equal(await page.locator('#report-month').inputValue(),'202607');
   assert.equal(await page.locator('input[data-ref="B11"]').inputValue(),'24850653.84');
   const wrongMonth=await page.evaluate(async()=>{
@@ -116,22 +117,105 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   const repeat=await api('apply',submitted);assert.equal(repeat.status,200,JSON.stringify(repeat.data));assert.equal(repeat.data.sqlReplacements.F18.signature,committed.sqlReplacements.F18.signature);assert.equal(stats().genstat_query_history,1);assert.equal(stats().genstat_query_apply_operations,1);
   assert.equal((await api('recover',{operationId:committed.operationId,confirmed:true},august)).status,400);
   await august.close();
-  await page.reload();await open();assert(await page.locator('#sql-recovery-panel').isVisible());page.once('dialog',d=>d.accept());await page.locator('#sql-recover').click();await idle();assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');assert.equal(await page.locator('input[data-ref="B11"]').inputValue(),'24850653.84');assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A18');assert.equal(stats().genstat_query_apply_operations,1);
+  await page.reload();await open();assert(await page.locator('#sql-recovery-panel').isVisible());await page.locator('#sql-recover').click();await page.locator('#report-confirmation').getByRole('button',{name:'Continue'}).click();await idle();assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');assert.equal(await page.locator('input[data-ref="B11"]').inputValue(),'24850653.84');assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A18');assert.equal(stats().genstat_query_apply_operations,1);
   const foreign=await browser.newContext(),foreignPage=await foreign.newPage();await foreignPage.goto(baseUrl+'/base-report.php?month=202607');const denied=await foreignPage.evaluate(async operationId=>{const r=await fetch('query-settings-api.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...window.genstatReport.snapshot(),action:'recover',operationId,confirmed:true})});return r.status;},committed.operationId);assert.equal(denied,400);await foreign.close();
   console.log('PASS: lost response after commit recovers the exact signed result and prior manual values; duplicate operation replays without duplicate history/signatures; other sessions cannot recover it. Save Draft remains pending.');
   await page.locator('#sql-settings-close').click();await page.locator('input[data-ref="B18"]').evaluate(input=>{input.value='5';input.dispatchEvent(new Event('change',{bubbles:true}));});await page.evaluate(()=>window.genstatReport.ready());await open();await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18');await test();await apply();assert.equal(stats().genstat_query_history,1);assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).revision),1);assert.equal(stats().genstat_query_apply_operations,2);
   await page.locator('#sql-calculation').fill('TotalKWhSold');assert(await page.locator('#sql-apply').isDisabled());await test();await apply();assert.equal(stats().genstat_query_history,2);await page.locator('#sql-history').click();await idle();const options=await page.locator('#sql-history-select option').evaluateAll(options=>options.map(o=>({value:o.value,text:o.textContent})));const original=options.find(o=>o.text.startsWith('v1 '));assert(original);await page.locator('#sql-history-select').selectOption(original.value);await page.locator('#sql-history-load').click();assert.equal(await page.locator('#sql-calculation').inputValue(),'Sales_KWH + KWH_Diff + Total_Cancelled_KWH');assert((await page.locator('#sql-apply-reason').textContent()).includes('Test the SQL'));assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).revision),2);await test();await apply();assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).revision),3);assert.equal(stats().genstat_query_history,3);
-  const beforeDisable=await page.evaluate(()=>window.genstatReport.snapshot());await page.locator('#sql-history').click();await idle();page.once('dialog',d=>d.accept());await page.locator('#sql-disable-config').click();await idle();assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');assert.deepEqual(await page.evaluate(()=>window.genstatReport.snapshot()),beforeDisable);assert.equal(stats().genstat_query_history,4);await page.locator('#sql-settings-close').click();await page.reload();await open();await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18');assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');await test();assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).enabled),0);await apply();assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).enabled),1);assert.equal(stats().genstat_query_history,5);
+  const beforeDisable=await page.evaluate(()=>window.genstatReport.snapshot());await page.locator('#sql-history').click();await idle();await page.locator('#sql-disable-config').click();await page.locator('#report-confirmation').getByRole('button',{name:'Continue'}).click();await idle();assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');assert.deepEqual(await page.evaluate(()=>window.genstatReport.snapshot()),beforeDisable);assert.equal(stats().genstat_query_history,4);await page.locator('#sql-settings-close').click();await page.reload();await open();await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18');assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');await test();assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).enabled),0);await apply();assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).enabled),1);assert.equal(stats().genstat_query_history,5);
   await page.locator('#sql-settings-dialog').evaluate(e=>e.scrollTop=0);await page.screenshot({animations:'disabled',path:'tests/query-apply-save-desktop.png'});await page.setViewportSize({width:390,height:844});await page.locator('#sql-apply').scrollIntoViewIfNeeded();await page.screenshot({animations:'disabled',path:'tests/query-apply-save-mobile.png'});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.setViewportSize({width:1440,height:1000});
   console.log('PASS: identical configurations avoid redundant history; new versions and restore are preserved; restore requires testing; disable is confirmed and retains history/values; viewing/testing disabled settings never enables them, successful Apply & Save does.');
   await page.locator('#sql-settings-close').click();const draft=path.join(root,'storage',`base-report-${beforeSource}-202607.json`);assert(!fs.existsSync(draft));await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#status').textContent==='Draft saved');const saved=JSON.parse(fs.readFileSync(draft,'utf8'));assert.equal(saved.sqlReplacements.F18.value,'1201329');assert.equal(saved.values.G18,'1201329');await page.reload();assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');
-  const fresh=await browser.newContext(),freshPage=await fresh.newPage();await freshPage.goto(baseUrl+'/base-report.php?month=202607');assert.equal(await freshPage.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');await fresh.close();await page.locator('td[data-ref="F18"]').focus();page.once('dialog',d=>d.accept());await page.locator('#restore-sql').click();await page.waitForFunction(()=>!window.genstatReport.snapshot().sqlReplacements.F18);await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#status').textContent==='Draft saved');await page.reload();assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');
-  const row18Before=stats().records.find(r=>r.template_row_key.endsWith('A18'));await open();assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A11');assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');assert(!(await page.locator('#sql-approved-note').isVisible()));await test();const ordinary=await apply();assert(!ordinary.sqlReplacements.F18);assert.equal(await page.locator('td[data-ref="B11"]').getAttribute('data-sql-applied'),'true');assert.equal(stats().records.find(r=>r.template_row_key.endsWith('A11')).query_key,'legacy_existing');assert.deepEqual(stats().records.find(r=>r.template_row_key.endsWith('A18')),row18Before);assert.equal(JSON.parse(fs.readFileSync(draft,'utf8')).revision,2);assert.equal((await api('apply',submitted)).status,400);
-  await page.locator('#sql-editor').fill(sql+' ');page.once('dialog',d=>d.dismiss());await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18');assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A11');assert.equal(checksum(),beforeSource);assert.deepEqual(productionDrafts(),beforeDrafts);assert.deepEqual(errors,[]);
+  const fresh=await browser.newContext(),freshPage=await fresh.newPage();await freshPage.goto(baseUrl+'/base-report.php?month=202607');assert.equal(await freshPage.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');await fresh.close();await page.locator('td[data-ref="F18"]').focus();const restore=page.locator('#restore-sql'),restoreTooltip=page.locator('#restore-sql-tooltip');
+  assert(await restore.isEnabled());
+  for(const [width,theme] of [[1440,'light'],[320,'dark']]){
+   await page.setViewportSize({width,height:1000});
+   await page.emulateMedia({colorScheme:theme});
+   await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
+   await restore.hover();
+   assert(await restoreTooltip.isVisible());
+   const [button,totals,tip]=await Promise.all([restore.boundingBox(),page.locator('#total-group-toggle').boundingBox(),restoreTooltip.boundingBox()]);
+   assert(button.x+button.width<totals.x&&button.y===totals.y);
+   assert(tip.x>=0&&tip.x+tip.width<=width);
+  }
+  await page.mouse.move(0,0);
+  assert(await restoreTooltip.isHidden());
+  await page.locator('#formula').focus();
+  await page.keyboard.press('Tab');
+  assert(await restore.evaluate(button=>button===document.activeElement&&button.matches(':focus-visible')));
+  assert(await restoreTooltip.isVisible());
+  assert.equal(await restoreTooltip.textContent(),'Restore original Excel formulas and reapply saved SQL and report formulas.');
+  await page.keyboard.press('Enter');
+  const restoreDialog=page.locator('#report-confirmation');
+  assert.equal(await restoreDialog.locator('#report-confirmation-detail').textContent(),'July 2026');
+  await restoreDialog.getByRole('button',{name:'Restore & Recalculate',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Report formulas restored'));
+  assert.equal((await page.evaluate(()=>window.genstatReport.snapshot())).sqlReplacements.F18.value,'1201329');
+ await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#status').textContent==='Draft saved');await page.reload();assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');
+  await page.setViewportSize({width:1440,height:1000});
+  await page.emulateMedia({colorScheme:'light'});
+  assert.doesNotMatch(serverLog,/PHP (?:Warning|Fatal error|Parse error|Notice)/);
+  const row18Before=stats().records.find(r=>r.template_row_key.endsWith('A18'));await open();assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A11');assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');assert(!(await page.locator('#sql-approved-note').isVisible()));await test();const ordinary=await apply();assert.equal(ordinary.sqlReplacements.F18.value,'1201329');assert.equal(await page.locator('td[data-ref="B11"]').getAttribute('data-sql-applied'),'true');assert.equal(stats().records.find(r=>r.template_row_key.endsWith('A11')).query_key,'legacy_existing');assert.deepEqual(stats().records.find(r=>r.template_row_key.endsWith('A18')),row18Before);assert.equal(JSON.parse(fs.readFileSync(draft,'utf8')).revision,2);assert.equal((await api('apply',submitted)).status,400);
+  await page.locator('#sql-editor').fill(sql+' ');await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18');await page.locator('#report-confirmation').getByRole('button',{name:'Cancel'}).click();await page.waitForFunction(()=>document.querySelector('#sql-row').value==='genstat-base/Jul26/A11');assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A11');assert.equal(checksum(),beforeSource);assert.deepEqual(productionDrafts(),beforeDrafts);assert.deepEqual(errors,[]);
   console.log('PASS: Save Draft persists signed replacements across sessions; explicit Restore Template Formula persists; legacy identifiers and row independence retained; draft-version staleness and unsaved row-switch confirmation work; original workbook and production drafts unchanged.');
+  const rebuildPage=await context.newPage();
+  await rebuildPage.goto(baseUrl+'/base-report.php?month=202607');
+  const rebuildSnapshot=()=>rebuildPage.evaluate(()=>window.genstatReport.snapshot());
+  const beforeRebuild=await rebuildSnapshot(),beforeConfig=stats(),beforeDraft=fs.readFileSync(draft);
+  const rebuildButton=rebuildPage.locator('#restore-sql'),rebuildDialog=rebuildPage.locator('#report-confirmation');
+  const rebuildNotice=rebuildPage.locator('#restore-notice'),rebuildOverlay=rebuildPage.locator('#report-loading-overlay');
+  const confirmRebuild=async()=>{
+   await rebuildButton.click();
+   await rebuildDialog.getByRole('button',{name:'Restore & Recalculate',exact:true}).click();
+  };
+  let releaseRebuild;
+  const rebuildGate=new Promise(resolve=>{releaseRebuild=resolve;});
+  await rebuildPage.route('**/base-report.php',async route=>{
+   if(route.request().method()==='POST'&&route.request().postDataJSON().action==='restore-report')await rebuildGate;
+   await route.continue();
+  });
+  await confirmRebuild();
+  assert(await rebuildOverlay.isVisible());
+  assert(await rebuildButton.isDisabled());
+  assert.match(await rebuildOverlay.textContent(),/Restoring Excel formulas and recalculating report/);
+  releaseRebuild();
+  await rebuildPage.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Report formulas restored'));
+  const rebuilt=await rebuildSnapshot();
+  assert.equal(rebuilt.month,'202607');
+  assert.equal(rebuilt.values.B11,String(ordinary.values.B11));
+  assert.equal(rebuilt.sqlReplacements.F18.value,'1201329');
+  assert.equal(rebuilt.sqlReplacements.F18.reportMonth,'202607');
+  assert.equal(await rebuildPage.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');
+  assert.equal(await rebuildPage.locator('td[data-ref="B11"]').getAttribute('data-sql-applied'),'true');
+  assert.deepEqual(stats(),beforeConfig);
+  assert.deepEqual(fs.readFileSync(draft),beforeDraft);
+  await rebuildPage.locator('#undo-restore').click();
+  await rebuildPage.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Previous report recovered'));
+  assert.deepEqual(await rebuildSnapshot(),beforeRebuild);
+  const failureFlag=path.join(root,'fail-fresh-query');
+  fs.writeFileSync(failureFlag,'');
+  try{
+   await confirmRebuild();
+   await rebuildPage.waitForFunction(()=>document.querySelector('#restore-notice').hasAttribute('data-error'));
+   assert.match(await rebuildNotice.textContent(),/Restoration failed.*previous report has been preserved/);
+   assert.deepEqual(await rebuildSnapshot(),beforeRebuild);
+   assert.deepEqual(stats(),beforeConfig);
+   assert.deepEqual(fs.readFileSync(draft),beforeDraft);
+  }finally{fs.unlinkSync(failureFlag);}
+  await rebuildPage.goto(baseUrl+'/base-report.php?month=202608');
+  await confirmRebuild();
+  await rebuildPage.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Report formulas restored'));
+  const augustRebuild=await rebuildSnapshot();
+  assert.equal(augustRebuild.month,'202608');
+  assert.equal(augustRebuild.sqlReplacements.F18.reportMonth,'202608');
+  assert.equal(await rebuildPage.locator('#report-month').inputValue(),'202608');
+  assert.deepEqual(fs.readFileSync(draft),beforeDraft);
+  await rebuildPage.close();
+  console.log('PASS: full restore reapplies both saved rows and the custom SQL expression; recovery and failed-query rollback preserve the draft and settings.');
   const monthPage=await context.newPage();
   const oldJulyDraft=JSON.parse(fs.readFileSync(draft,'utf8'));
   oldJulyDraft.values.B18='5';
+  delete oldJulyDraft.sqlReplacements.F18;
   oldJulyDraft.formulas.F18='=1+1';
   fs.writeFileSync(draft,JSON.stringify(oldJulyDraft));
   await monthPage.goto(july);
@@ -201,6 +285,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await monthPage.locator('#sql-editor').inputValue(),fixedSql);
   await monthPage.close();
   const periodPage=await context.newPage();
+  await periodPage.addInitScript(()=>localStorage.setItem('genstat:appearance:v1',JSON.stringify({fontSize:13,rowHeight:44})));
   await periodPage.goto(july);
   const totalToggle=periodPage.locator('#total-group-toggle');
   await totalToggle.click();
@@ -262,10 +347,26 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   const output=path.join(root,'period-export.xlsx');
   await download.saveAs(output);
   process.stdout.write(fixture('period-export'));
+  const periodLabelToggle=periodPage.locator('tr[data-excel-row="18"]').getByRole('button');
+  const sqlBackground=await periodPage.locator('td[data-ref="F18"]').evaluate(cell=>getComputedStyle(cell).backgroundColor);
+  await periodLabelToggle.click();
+  const highlightedSql=await periodPage.locator('td[data-ref="F18"]').evaluate(cell=>({
+   color:getComputedStyle(cell).backgroundColor,
+   badge:getComputedStyle(cell.querySelector('.value'),'::before').content,
+   border:getComputedStyle(cell,'::after').backgroundImage.includes('rgb(37, 99, 235)')
+  }));
+  assert.match(highlightedSql.badge,/SQL/);
+  assert.equal(highlightedSql.color,sqlBackground);
+  assert.equal(highlightedSql.border,true);
   await periodPage.locator('#report-year').selectOption('2026');
   await periodPage.waitForURL(reportUrl+'?month=202609');
+  assert.equal(await periodLabelToggle.getAttribute('aria-pressed'),'false');
+  await periodLabelToggle.click();
   await periodPage.locator('#report-month').selectOption('202608');
   await periodPage.waitForURL(augustUrl);
+  assert.equal(await periodLabelToggle.getAttribute('aria-pressed'),'false');
+  assert.equal(await periodPage.locator('#genstat-report-table').evaluate(table=>getComputedStyle(table).fontSize),'13px');
+  assert.equal(await periodPage.locator('tr[data-excel-row="18"]').evaluate(row=>row.offsetHeight),44);
   const requestsBeforeYearChange=requested;
   await periodPage.locator('#report-year').selectOption('2027');
   await periodPage.waitForURL(reportUrl+'?month=202709');
@@ -350,8 +451,8 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await rowSelection.selectOption('genstat-base/Jul26/A25');
   await page.locator('#sql-history').click();
   await idle();
-  page.once('dialog',dialog=>dialog.accept());
   await page.locator('#sql-disable-config').click();
+  await page.locator('#report-confirmation').getByRole('button',{name:'Continue'}).click();
   await idle();
   assert.equal(await sqlLabel('C25'),null);
   assert.equal(await page.locator('input[data-ref="C25"]').inputValue(),'0');

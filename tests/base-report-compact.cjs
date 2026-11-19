@@ -9,17 +9,26 @@ const expected=[16,19,21,34,37,46,47];
   await page.setViewportSize({width:1280,height:720});
   await page.goto(process.env.GENSTAT_TEST_COMPACT_URL||'http://localhost/genstat/');
   const toggle=page.locator('#total-group-toggle');
-  const tableWidth=()=>page.locator('table').evaluate(table=>table.getBoundingClientRect().width / Number(table.dataset.scale));
-  await page.waitForFunction(()=>document.querySelector('table').dataset.scale);
+  const tableWidth=()=>page.locator('#genstat-report-table').evaluate(table=>table.getBoundingClientRect().width);
+  await page.locator('#genstat-report-table').waitFor();
   assert.equal(await toggle.getAttribute('aria-expanded'),'false');
   assert(await toggle.isVisible());
   assert.equal(await toggle.innerText(),'');
-  const actions=page.locator('.report-toolbar button');
+  const restore=page.locator('#restore-sql');
+  const tooltip=page.getByRole('tooltip',{includeHidden:true});
+  assert.equal(await restore.count(),1);
+  assert.equal(await toggle.count(),1);
+  assert(await restore.isEnabled());
+  assert.equal(await restore.innerText(),'');
+  assert(await restore.locator('svg').isVisible());
+  assert.equal(await restore.getAttribute('aria-describedby'),await tooltip.getAttribute('id'));
+  assert.equal(await restore.evaluate(button=>button.nextElementSibling.id),'total-group-toggle');
+  const actions=page.locator('header .report-toolbar button');
   assert.deepEqual(await actions.evaluateAll(buttons=>buttons.map(button=>[button.id,button.dataset.tooltip,button.textContent.trim()])),[
-   ['total-group-toggle','Show Totals',''],['report-export','Export Excel',''],['save','Save Draft',''],['sql-settings-open','Settings',''],
+   ['report-export','Export Excel',''],['save','Save Draft',''],['sql-settings-open','Settings',''],
   ]);
   await page.locator('#report-month').focus();
-  for(const [i,label] of ['Show Totals','Export Excel','Save Draft','Settings'].entries()){
+  for(const [i,label] of ['Export Excel','Save Draft','Settings'].entries()){
    await page.keyboard.press('Tab');
    const tooltip=await actions.nth(i).evaluate(button=>({focused:button===document.activeElement,style:getComputedStyle(button,'::after').visibility,text:getComputedStyle(button,'::after').content}));
    assert.deepEqual(tooltip,{focused:true,style:'visible',text:JSON.stringify(label)});
@@ -35,11 +44,11 @@ const expected=[16,19,21,34,37,46,47];
   assert.match(await notes.locator('.report-notes-content').textContent(),/Blue designated inputs/);
   await notes.locator('summary').click();
   assert.equal(await page.locator('table #total-group-toggle').count(),0);
-  const [control,viewport]=await Promise.all([page.locator('.report-toolbar').boundingBox(),page.locator('.report-scroll').boundingBox()]);
+  const [control,viewport]=await Promise.all([page.locator('header .report-toolbar').boundingBox(),page.locator('.report-scroll').boundingBox()]);
   assert(control.y+control.height<=viewport.y&&Math.abs(control.x+control.width-viewport.x-viewport.width)<9);
   for(const ref of ['Q9','R9','S9','Q18','R18','S18'])assert(!(await page.locator(`[data-classification][data-ref="${ref}"]`).isVisible()));
   assert.deepEqual(await page.locator('col').evaluateAll(cols=>cols.filter(col=>getComputedStyle(col).display!=='none').map(col=>col.dataset.column)),[...'ABCDEFGHIJKLMNOP']);
-  const trailingSpace=await page.locator('table').evaluate(table=>table.getBoundingClientRect().right-table.querySelector('td[data-ref="P18"]').getBoundingClientRect().right);
+  const trailingSpace=await page.locator('#genstat-report-table').evaluate(table=>table.getBoundingClientRect().right-table.querySelector('td[data-ref="P18"]').getBoundingClientRect().right);
   assert(Math.abs(trailingSpace)<1,'Rizal is flush with the collapsed table edge');
   const collapsedWidth=await tableWidth();
   const total=await page.locator('[data-ref="Q18"] .value').textContent();
@@ -67,19 +76,19 @@ const expected=[16,19,21,34,37,46,47];
   await page.setViewportSize({width:1280,height:720});
   await toggle.click();
   for(const [width,height] of [[1920,1080],[1600,900],[1366,768],[1280,720],[390,844]]){
-   await page.setViewportSize({width,height});await page.goto(process.env.GENSTAT_TEST_COMPACT_URL||'http://localhost/genstat/');await page.waitForFunction(()=>document.querySelector('table').dataset.scale);
+   await page.setViewportSize({width,height});await page.goto(process.env.GENSTAT_TEST_COMPACT_URL||'http://localhost/genstat/');await page.locator('#genstat-report-table').waitFor();
    assert.deepEqual(await page.locator('tr[hidden]').evaluateAll(rows=>rows.map(r=>Number(r.dataset.excelRow))),expected);
    for(const row of expected){assert(!(await page.locator(`tr[data-excel-row="${row}"]`).isVisible()));assert(await page.locator(`tr[data-excel-row="${row}"] [data-classification="formula"]`).count()>0);}
    assert(await page.locator('tr[data-excel-row="25"]').isVisible());
    assert.equal(await page.locator('[data-classification="formula"]').count(),312);assert.equal(await page.locator('[data-classification="database_input"]').count(),96);
    const metrics=await page.evaluate(()=>{
-    const viewport=document.querySelector('.report-scroll'),table=document.querySelector('table'),scale=Number(table.dataset.scale);
+    const viewport=document.querySelector('.report-scroll'),table=document.querySelector('#genstat-report-table');
     const clipped=[];for(const cell of table.querySelectorAll('tbody tr:not([hidden]):not(.spacer-row) td:not(.particulars)')){const span=cell.querySelector('.value');if(span.scrollWidth>span.clientWidth+1)clipped.push(cell.dataset.ref);}
-    return {scale,font:parseFloat(getComputedStyle(table).fontSize)*scale,tableHeight:table.getBoundingClientRect().height,available:viewport.clientHeight,scrollHeight:viewport.scrollHeight,scrollWidth:viewport.scrollWidth,width:viewport.clientWidth,documentWidth:document.documentElement.scrollWidth,clipped};
+    return {font:parseFloat(getComputedStyle(table).fontSize),tableHeight:table.getBoundingClientRect().height,available:viewport.clientHeight,scrollHeight:viewport.scrollHeight,scrollWidth:viewport.scrollWidth,width:viewport.clientWidth,documentWidth:document.documentElement.scrollWidth,clipped};
    });
    console.log(`${width}x${height}: ${JSON.stringify(metrics)}`);
-   assert(metrics.font>=9.99);assert.equal(metrics.documentWidth,width);assert.deepEqual(metrics.clipped,[]);
-   if(width>=1280)assert(metrics.scrollHeight<=metrics.available+1,'Visible rows must fit vertically');
+   assert.equal(metrics.font,12);assert.equal(metrics.documentWidth,width);assert.deepEqual(metrics.clipped,[]);
+   assert(metrics.scrollHeight>=Math.floor(metrics.tableHeight)-1,'All rows remain reachable');
    const before=await page.locator('[data-ref="B8"]').evaluate(e=>e.getBoundingClientRect().top);
    await page.locator('.report-scroll').evaluate(e=>{e.scrollLeft=e.scrollWidth;e.scrollTop=e.scrollHeight;});
    const pinned=await page.evaluate(()=>{const viewport=document.querySelector('.report-scroll').getBoundingClientRect(),a=document.querySelector('[data-ref="A30"]').getBoundingClientRect(),b=document.querySelector('[data-ref="B8"]').getBoundingClientRect(),header2=document.querySelector('[data-ref="S9"]').getBoundingClientRect(),header1=document.querySelector('[data-ref="S8"]').getBoundingClientRect();return {left:a.left,viewportLeft:viewport.left,top:b.top,header2Top:header2.top,header1Bottom:header1.bottom,right:document.querySelector('[data-ref="S44"]').getBoundingClientRect().right,viewportRight:viewport.right};});
@@ -88,12 +97,100 @@ const expected=[16,19,21,34,37,46,47];
    await page.screenshot({path:`tests/base-report-compact-${width}.png`});
   }
   await page.setViewportSize({width:1600,height:900});
-  await page.waitForFunction(()=>Number(document.querySelector('table').dataset.scale)<1);
-  const resized=await page.evaluate(()=>({scale:Number(document.querySelector('table').dataset.scale),height:document.querySelector('.report-scroll').scrollHeight,available:document.querySelector('.report-scroll').clientHeight}));
-  assert(resized.height<=resized.available+1);console.log('PASS: resizing the loaded mobile view recalculates desktop fit');
+  const appearancePage=await browser.newPage({viewport:{width:820,height:700},colorScheme:'dark'});
+  const appearanceErrors=[];
+  appearancePage.on('pageerror',error=>appearanceErrors.push(error.message));
+  await appearancePage.addInitScript(()=>{
+   const observer=new MutationObserver(()=>{
+    if(document.body){
+     window.themeAtBodyInsertion=document.documentElement.dataset.theme;
+     observer.disconnect();
+    }
+   });
+   observer.observe(document,{childList:true,subtree:true});
+  });
+  await appearancePage.goto(process.env.GENSTAT_TEST_COMPACT_URL||'http://localhost/genstat/');
+  assert.equal(await appearancePage.locator('html').getAttribute('data-theme'),'dark');
+  const baseSnapshot=await appearancePage.evaluate(()=>window.genstatReport.snapshot());
+  const settings=appearancePage.locator('#sql-settings-dialog');
+  const openAppearance=async()=>{
+   await appearancePage.locator('#sql-settings-open').click();
+   await appearancePage.locator('#settings-appearance-tab').click();
+   await appearancePage.waitForFunction(()=>!document.querySelector('#sql-settings-dialog').hasAttribute('aria-busy'));
+  };
+  await openAppearance();
+  assert(await settings.getByRole('heading',{name:'Table Appearance'}).isVisible());
+  assert(await appearancePage.locator('#settings-reporting').isHidden());
+  const pref=name=>appearancePage.locator(`#report-appearance-form [name="${name}"]`);
+  const preview=appearancePage.locator('#appearance-preview');
+  await pref('theme').selectOption('light');
+  await pref('rowHeight').selectOption('44');
+  for(const size of [11,12,13,14]){
+   await pref('fontSize').selectOption(String(size));
+   assert.equal(await preview.locator('table').evaluate(table=>getComputedStyle(table).fontSize),size+'px');
+  }
+  await pref('columnSpacing').selectOption('compact');
+  await pref('selectionBorderWidth').selectOption('3');
+  await pref('selectionBorderColor').fill('#e11d48');
+  assert.equal(await preview.getAttribute('data-theme'),'light');
+  assert.equal(await appearancePage.locator('html').getAttribute('data-theme'),'dark');
+  const sample=await preview.locator('tbody td').last().evaluate(cell=>({
+   height:cell.offsetHeight,font:getComputedStyle(cell).fontSize,padding:getComputedStyle(cell).paddingLeft,
+   edge:getComputedStyle(cell,'::after').backgroundSize,color:getComputedStyle(cell,'::after').backgroundImage
+  }));
+  assert.equal(sample.height,44);assert.equal(sample.font,'14px');assert.equal(sample.padding,'4px');
+  assert.match(sample.edge,/100% 3px/);assert.match(sample.color,/rgb\(225, 29, 72\)/);
+  await settings.getByRole('button',{name:'Apply Changes'}).click();
+  assert.equal(await appearancePage.locator('html').getAttribute('data-theme'),'light');
+  assert.deepEqual(await appearancePage.evaluate(()=>window.genstatReport.snapshot()),baseSnapshot);
+  await pref('rowHeight').selectOption('28');
+  assert.equal(await preview.locator('tbody tr').evaluate(row=>row.offsetHeight),28);
+  await settings.getByRole('button',{name:'Cancel',exact:true}).click();
+  await appearancePage.locator('#settings-appearance-tab').click();
+  assert.equal(await pref('rowHeight').inputValue(),'44');
+  await settings.getByRole('button',{name:'Reset to Defaults'}).click();
+  assert.equal(await pref('rowHeight').inputValue(),'36');
+  assert.equal(await appearancePage.locator('html').getAttribute('data-theme'),'light');
+  await appearancePage.keyboard.press('Escape');
+  assert(await settings.isHidden());
+  assert.equal(await appearancePage.locator('#sql-settings-open').evaluate(el=>el===document.activeElement),true);
+  await appearancePage.reload();
+  assert.equal(await appearancePage.locator('html').getAttribute('data-theme'),'light');
+  assert.equal(await appearancePage.locator('#genstat-report-table').evaluate(el=>getComputedStyle(el).fontSize),'14px');
+  await openAppearance();
+  await settings.getByRole('button',{name:'Reset to Defaults'}).click();
+  await settings.getByRole('button',{name:'Apply Changes'}).click();
+  assert.equal(await appearancePage.locator('html').getAttribute('data-theme'),'dark');
+  await appearancePage.emulateMedia({colorScheme:'light'});
+  await appearancePage.waitForFunction(()=>document.documentElement.dataset.theme==='light');
+  await pref('theme').selectOption('dark');
+  await settings.getByRole('button',{name:'Apply Changes'}).click();
+  await appearancePage.reload();
+  assert.equal(await appearancePage.locator('html').getAttribute('data-theme'),'dark');
+  assert.equal(await appearancePage.evaluate(()=>window.themeAtBodyInsertion),'dark');
+  await appearancePage.locator('#sql-settings-open').click();
+  await appearancePage.waitForFunction(()=>!document.querySelector('#sql-settings-dialog').hasAttribute('aria-busy'));
+  const sqlEditor=appearancePage.locator('#sql-editor');
+  assert.equal(await sqlEditor.evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(39, 52, 73)');
+  const darkParticulars=await appearancePage.locator('td[data-ref="A11"]').evaluate(el=>getComputedStyle(el).backgroundColor);
+  assert.equal(darkParticulars,'rgb(18, 68, 88)');
+  assert.equal(await appearancePage.locator('td[data-ref="A22"]').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(30, 41, 59)');
+  await sqlEditor.fill((await sqlEditor.inputValue())+' ');
+  await appearancePage.keyboard.press('Escape');
+  const confirmation=appearancePage.locator('#report-confirmation');
+  assert(await confirmation.isVisible());
+  const palette=await confirmation.evaluate(el=>({background:getComputedStyle(el).backgroundColor,scheme:getComputedStyle(el).colorScheme}));
+  assert.notEqual(palette.background,'rgb(255, 255, 255)');
+  assert.equal(palette.scheme,'dark');
+  await confirmation.getByRole('button',{name:'Continue'}).click();
+  await settings.waitFor({state:'hidden'});
+  assert.deepEqual(appearanceErrors,[]);
+  await appearancePage.close();
+  console.log('PASS: appearance preview, cancel, reset, browser persistence, explicit themes and live system changes');
   const blockedStorage=await browser.newPage();
   await blockedStorage.addInitScript(()=>Object.defineProperty(window,'localStorage',{get(){throw new Error('Storage unavailable');}}));
   await blockedStorage.goto(process.env.GENSTAT_TEST_COMPACT_URL||'http://localhost/genstat/');
+  assert.equal(await blockedStorage.locator('#genstat-report-table').evaluate(el=>getComputedStyle(el).getPropertyValue('--report-row-height')),'36px');
   const blockedToggle=blockedStorage.locator('#total-group-toggle');
   assert.equal(await blockedToggle.getAttribute('aria-expanded'),'false');
   await blockedToggle.click();

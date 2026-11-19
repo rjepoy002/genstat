@@ -55,11 +55,11 @@
  }
  function showRecovery(operation){recoveryOperation=operation;$('sql-recovery-panel').hidden=!operation;}
  async function loadMetadata(preferredKey=null){meta=await api('metadata');$('sql-context').textContent=`${meta.monthLabel} / :ReportMonth = ${meta.month} / read-only preview`;const select=$('sql-row');select.replaceChildren();for(const row of meta.rows){const option=document.createElement('option');option.value=row.key;option.textContent=`${row.label} / ${row.status}`;select.append(option);}showRecovery(meta.recoverableOperation);if(meta.rows.length)populateRow(meta.rows.some(r=>r.key===preferredKey)?preferredKey:meta.rows[0].key);else message('No eligible visible report input rows.');}
- $('sql-settings-open').addEventListener('click',()=>{if(dialog.open)return;invalidateTest();meta=null;dialog.showModal();operation(async()=>{await loadMetadata();$('sql-row').focus({preventScroll:true});dialog.scrollTop=0;});});
- function close(){if(busy)return;if(dirty&&!confirm('Discard unsaved SQL configuration changes?'))return;dialog.close();dirty=false;$('sql-settings-open').focus();}
+ $('sql-settings-open').addEventListener('click',()=>{if(dialog.open)return;invalidateTest();meta=null;dialog.showModal();operation(async()=>{await loadMetadata();if(!$('settings-reporting').hidden){$('sql-row').focus({preventScroll:true});dialog.scrollTop=0;}});});
+ async function close(){if(busy)return;if(dirty&&!await report.confirmAction('Discard unsaved SQL configuration changes?'))return;dialog.close();dirty=false;$('sql-settings-open').focus();}
  $('sql-settings-close').addEventListener('click',close);dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
  $('sql-fields').addEventListener('input',e=>{if(!['sql-row','sql-history-select'].includes(e.target.id))changed();});$('sql-fields').addEventListener('change',e=>{if(!['sql-row','sql-history-select'].includes(e.target.id))changed();});
- $('sql-row').addEventListener('change',()=>{const next=$('sql-row').value;if(dirty&&!confirm('Discard unsaved SQL configuration changes for this row?')){$('sql-row').value=current.key;return;}populateRow(next);});
+ $('sql-row').addEventListener('change',async()=>{const next=$('sql-row').value;if(dirty&&!await report.confirmAction('Discard unsaved SQL configuration changes for this row?')){$('sql-row').value=current.key;return;}populateRow(next);});
  function showResult(result,computed=null){testedResult=result;fillTable($('sql-preview'),[...result.columns,...(computed?['Computed Value']:[])],result.rows.map((r,i)=>computed?{...r,'Computed Value':computed[i]}:r));}
  function returnedColumns(result){
   const saved=$('sql-auto-column').value;$('sql-auto-column').replaceChildren(new Option('Choose matching column',''),...result.columns.map(c=>new Option(c,c)));
@@ -96,8 +96,8 @@
  }));
  $('sql-sacode-column').addEventListener('input',()=>{for(const input of $('sql-bindings').querySelectorAll('input'))input.hidden=!$('sql-sacode-column').value.trim();});
  $('sql-history').addEventListener('click',()=>operation(async()=>{const result=await api('history',{rowKey:current.key});history=result.history;$('sql-history-select').replaceChildren();for(const item of history){const option=document.createElement('option');option.value=item.id;option.textContent=`v${item.revision} / ${item.created_at} UTC / ${item.current?'Current':'Available'} / ${item.config.enabled?'Enabled':'Disabled'}`;$('sql-history-select').append(option);}$('sql-history-panel').hidden=false;$('sql-history').setAttribute('aria-expanded','true');$('sql-history-load').disabled=!history.length;message(history.length?'Restore a version into the editor, then test before Apply & Save.':'No saved configuration versions for this row.');}));
- $('sql-history-load').addEventListener('click',()=>{if(dirty&&!confirm('Discard unapplied settings and restore the selected configuration into the editor?'))return;const item=history.find(x=>String(x.id)===$('sql-history-select').value);if(item)populateRow(current.key,item.config);});
- $('sql-disable-config').addEventListener('click',()=>{if(!confirm('Disable this saved row configuration? Its SQL and history will be kept; report values will not change.'))return;operation(async()=>{const result=await api('disable',{rowKey:current.key,mappingRevision:Number(meta.records[current.key]?.revision??0),confirmed:true});meta.records[current.key]=result.record;report.disableSqlLabels(current.key);populateRow(current.key);message(result.message);});});
+ $('sql-history-load').addEventListener('click',async()=>{if(dirty&&!await report.confirmAction('Discard unapplied settings and restore the selected configuration into the editor?'))return;const item=history.find(x=>String(x.id)===$('sql-history-select').value);if(item)populateRow(current.key,item.config);});
+ $('sql-disable-config').addEventListener('click',async()=>{if(!await report.confirmAction('Disable this saved row configuration? Its SQL and history will be kept; report values will not change.'))return;operation(async()=>{const result=await api('disable',{rowKey:current.key,mappingRevision:Number(meta.records[current.key]?.revision??0),confirmed:true});meta.records[current.key]=result.record;report.disableSqlLabels(current.key);populateRow(current.key);message(result.message);});});
  const loadingDialog=$('sql-apply-loading');
  loadingDialog.addEventListener('cancel',event=>event.preventDefault());
  async function withApplyLoading(fn){
@@ -129,8 +129,8 @@
    throw e;
   }
  })));
- $('sql-recover').addEventListener('click',()=>{
-  if(!recoveryOperation||!confirm('Recover the last committed Apply & Save result into the current report? Other edits will not be overwritten.'))return;
+ $('sql-recover').addEventListener('click',async()=>{
+  if(!recoveryOperation||!await report.confirmAction('Recover the last committed Apply & Save result into the current report? Other edits will not be overwritten.'))return;
   operation(()=>withApplyLoading(async()=>{
    await report.ready();
    await finishApplied(await api('recover',{operationId:recoveryOperation.operation_id,confirmed:true}));

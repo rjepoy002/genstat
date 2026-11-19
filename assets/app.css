@@ -28,3 +28,19 @@
 
 /* Frozen headings share the worksheet scale and cover all cell/highlight layers. */
 .worksheet-header-layer{position:absolute;left:0;top:0;background:#f0f2f1;isolation:isolate;will-change:transform}#column-headings{z-index:20}#row-headings{z-index:21}#sheet-corner{left:0;top:0;z-index:22;will-change:transform}
+
+/* The annual editor shares the report theme while retaining workbook geometry. */
+html.dark{--navy:#173650;--navy-light:#273449;--text:#f8fafc;--muted:#cbd5e1;--border:#475569;--surface:#1e293b;--canvas:#0f172a;--danger:#fda4af}
+html.dark :is(.workspace-toolbar,.formula-bar,.worksheet-footer,.worksheet-tabs,.notes-panel,.zoom-panel,dialog){background:#1e293b;color:#f8fafc;border-color:#475569}
+html.dark :is(.notification-strip,.worksheet-tab,.sheet-tab,.access-badge,.template-update,.corner,.col-heading,.row-heading){background:#273449;color:#cbd5e1;border-color:#475569}
+html.dark :is(.notification-strip,.template-update) small,html.dark :is(.workspace-heading p,.warning-list code,dialog p,.footer-template){color:#cbd5e1}
+html.dark :is(.button-header,.button-outline,.icon-button,select,dialog input,.formula-bar input){background:#273449;color:#f8fafc;border-color:#475569}
+html.dark :is(.button-header,.button-outline,.icon-button):hover:not(:disabled){background:#334155;color:#fff}
+html.dark .cell:not([style*="background-color"]){background:#1e293b;color:#f8fafc}
+html.dark .cell[style*="#FFFFFF" i]{background:#1e293b!important;color:#f8fafc!important}
+html.dark .cell:is([style*="#00B0F0" i],[style*="#4BACC6" i]){background:#124458!important;color:#e0f7ff!important}
+html.dark .cell[style*="#ccc1da" i]{background:#43345a!important;color:#f4e9ff!important}
+html.dark .cell.manual-input{background:#5b4518!important;color:#fff3c4!important}
+html.dark .cell.calculation-error{color:#fda4af!important}
+html.dark :is(.dialog-message,.warning-count){background:#273449;color:#cbd5e1!important}
+html.dark :is(.dialog-message.error-message,.warning-count.has-errors,.template-update[data-state="error"],.template-update[data-state="conflict"]){background:#4c1d30;color:#fda4af!important;border-color:#be5779}

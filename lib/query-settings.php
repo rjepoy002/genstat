@@ -189,20 +189,24 @@ function qs_enabled_value_targets(array $layout,array $records): array {
  }
  return $targets;
 }
-function qs_period_preview(array $layout,bool $onlyTotal=false): array {
+function qs_period_preview(array $layout,bool $onlyTotal=false,bool $strict=false): array {
  try{
   $db=qs_db('writer');
   try{$records=qs_load($db);}finally{$db->close();}
  }catch(mysqli_sql_exception|QuerySettingsError $e){
   throw new QuerySettingsError('SQL reporting configuration is unavailable.',503,$e);
  }
- $area=null;$values=[];$total=[];$results=[];
+ $area=null;$values=[];$total=[];$results=[];$matchedRows=[];
  $rows=qs_rows($layout);$month=base_report_month($layout);
  foreach($records as $key=>$record){
-  if(!$record['enabled']||!isset($rows[$key]))continue;
+  if(!$record['enabled'])continue;
+  if(!isset($rows[$key])){
+   if($strict&&str_starts_with($key,'genstat-base/'.$layout['sheets'][0]['name'].'/'))throw new QuerySettingsError('An enabled saved configuration no longer maps to a report row: '.$key);
+   continue;
+  }
   $isTotal=sql_replacement_row_approved($layout,$key);
   if($onlyTotal&&!$isTotal)continue;
-  if($isTotal)$total=array_fill_keys(array_keys(qs_targets($layout,qs_record_config($record))),null);
+  if($isTotal&&!$strict)$total=array_fill_keys(array_keys(qs_targets($layout,qs_record_config($record))),null);
   try{
    if($record['template_hash']!==$layout['sha256'])throw new QuerySettingsError('Test and save the row configuration for the current reference workbook.');
    $config=qs_normalize($layout,qs_record_config($record));
@@ -214,18 +218,23 @@ function qs_period_preview(array $layout,bool $onlyTotal=false): array {
    $area??=qs_area_metadata();
    $match=qs_match($layout,$config,$result,$area['areas'],$area['areaMappings']);
    if($match['errors'])throw new QuerySettingsError($match['errors'][0]);
+   if($strict){
+    if(!$match['changes'])throw new QuerySettingsError('No eligible SQL values to apply.');
+    $matchedRows[]=['config'=>$config,'revision'=>(int)$record['revision'],'changes'=>$match['changes']];
+   }
    foreach($match['changes'] as $ref=>$change){
     if($isTotal)$total[$ref]=$change['value'];
     else $values[$ref]=$change['value'];
    }
   }catch(mysqli_sql_exception|QuerySettingsError $e){
-   if(!$isTotal){
+   if($strict||!$isTotal){
     if($e instanceof QuerySettingsError)throw new QuerySettingsError($rows[$key]['label'].': '.$e->getMessage(),0,$e);
+    if($strict)throw new QuerySettingsError($rows[$key]['label'].': The saved SQL query could not be executed.',0,$e);
     throw $e;
    }
   }
  }
- return ['values'=>$values,'total'=>$total,'sqlTargets'=>qs_enabled_value_targets($layout,$records)];
+ return ['values'=>$values,'total'=>$total,'sqlTargets'=>qs_enabled_value_targets($layout,$records)]+($strict?['matchedRows'=>$matchedRows]:[]);
 }
 function qs_period_preview_token(array $layout,array $values,array $total): string {
  return hash_hmac('sha256',base_report_scope($layout).':'.qs_stable_hash([$values,$total]),$_SESSION['baseCsrf']);

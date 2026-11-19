@@ -5,7 +5,7 @@
 @source "../partials/sql-settings.php";
 @source "./sql-settings.js";
 /* Settings-only components: isolate the dashboard from the workbook grid. */
-#sql-settings-dialog.sql-modal{width:min(1440px,94vw);max-width:94vw;max-height:94dvh;border-radius:16px;margin:auto;overflow:auto;scrollbar-gutter:stable;box-shadow:0 24px 80px #0f172a45;font:13px Arial,sans-serif;background:#f8fafc}
+#sql-settings-dialog.sql-modal{width:min(1440px,94vw);max-width:94vw;max-height:94dvh;border-radius:16px;margin:auto;overflow:auto;scroll-padding-top:8.5rem;scrollbar-gutter:stable;box-shadow:0 24px 80px #0f172a45;font:13px Arial,sans-serif;background:#f8fafc}
 #sql-settings-dialog::backdrop{background:#0f172aa6}
 #sql-settings-dialog fieldset:disabled{opacity:.65}
 #sql-settings-dialog [hidden]{display:none!important}
@@ -55,3 +55,26 @@
 
 #sql-apply-loading{position:fixed;inset:0;margin:auto;height:fit-content}
 #sql-apply-loading::backdrop{background:#0009;backdrop-filter:blur(3px)}
+
+@custom-variant dark (&:where(.dark, .dark *));
+@source "../partials/report-appearance.php";
+
+#sql-settings-dialog nav button[aria-pressed="true"]{@apply border-blue-700 bg-blue-50 text-blue-800;}
+.dark #sql-settings-dialog.sql-modal{background:#0f172a;color:#f8fafc}
+.dark #sql-settings-dialog :is(.sql-card,.settings-preview,.settings-preview td,.settings-input,.sql-mapping-item,#sql-history-panel,#sql-message,#sql-row-status){background:#1e293b;border-color:#475569!important;color:#f8fafc}
+.dark #sql-settings-dialog :is(.sql-card-title,.settings-label){color:#f8fafc}
+.dark #sql-settings-dialog :is(.sql-help,.sql-empty,[class*="text-slate-"],#sql-column-tokens:empty::before){color:#cbd5e1}
+.dark #sql-settings-dialog :is(.settings-preview th,.settings-preview tr:hover td,#sql-editor,#sql-calculation,.sql-mapping-item>select,#sql-mapping-message){background:#273449!important;color:#f8fafc!important;border-color:#475569!important}
+.dark #sql-settings-dialog [class*="bg-slate-50"]:not(#settings-appearance *){background:#273449}
+.dark #sql-settings-dialog :is([class*="bg-teal-50"],#sql-column-tokens button){background:#134e4a;color:#ccfbf1;border-color:#5badaa}
+.dark #sql-settings-dialog :is(#sql-recovery-panel,#sql-month-warning){background:#483818;color:#fde68a;border-color:#a16207}
+.dark #sql-settings-dialog :is(.sql-diagnostics,#sql-message[data-error=true]){color:#fda4af}
+.dark #sql-settings-dialog #sql-message[data-error=true]{background:#4c1d30;border-color:#be5779!important}
+.dark #sql-settings-dialog :is([data-state="Auto-matched"],#sql-apply-reason[data-ready=true],.sql-mapping-item>button){color:#99f6e4}
+.dark #sql-settings-dialog :is([data-state="Unmatched"],[data-state="Ambiguous"]){color:#fde68a}
+.dark #sql-settings-dialog :is(button:disabled,button.sql-primary:disabled){background:#334155;color:#cbd5e1;border-color:#64748b}
+.dark #sql-settings-dialog [class*="text-teal-"]{color:#99f6e4}
+.dark #sql-settings-dialog [data-state="Previously saved"],.dark #sql-settings-dialog [data-state="Manually mapped"]{color:#cbd5e1}
+.dark #sql-settings-dialog nav button[aria-pressed="true"]{@apply border-blue-400 bg-blue-950 text-blue-100;}
+#report-appearance-form input[type="color"]{padding:4px;height:36px}
+@media(prefers-reduced-motion:reduce){#sql-settings-dialog button,#sql-settings-dialog .settings-input{transition:none}}

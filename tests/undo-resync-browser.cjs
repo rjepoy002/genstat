@@ -25,7 +25,8 @@ try{
  for(let i=0;i<50;i++){try{const response=await fetch(base+'?sheet=Jun26');if(response.ok)break;}catch{await new Promise(r=>setTimeout(r,100));}}
  browser=await chromium.launch({executablePath:'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',headless:true});
  const page=await browser.newPage({viewport:{width:1400,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(60000);page.on('framenavigated',f=>{if(f===page.mainFrame())console.log('Fixture navigation: '+f.url());});
- async function ready(){await page.goto(base+'?sheet=Jun26');await page.waitForFunction(()=>!document.querySelector('input[data-ref="AG99"]').disabled,{},{timeout:60000});}
+ await page.addInitScript(()=>localStorage.setItem('genstat:appearance:v1',JSON.stringify({theme:'dark'})));
+ async function ready(){await page.goto(base+'?sheet=Jun26');assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');await page.waitForFunction(()=>!document.querySelector('input[data-ref="AG99"]').disabled,{},{timeout:60000});}
  async function settled(){await page.waitForFunction(()=>!document.querySelector('#save').disabled,{},{timeout:60000});}
  async function persisted(check){for(let i=0;i<600;i++){if(check(data())){await settled();return;}await page.waitForTimeout(100);}throw new Error('Draft persistence timed out: '+JSON.stringify(data()));}
  const input=page.locator('input[data-ref="AG99"]');await ready();
