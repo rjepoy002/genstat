@@ -47,6 +47,7 @@ function qs_receipt(mysqli $db,string $operationId): ?array {
 }
 function qs_restore_receipt(array $l,array $receipt,array $records,array $body,array $draft,bool $recovery=false): array {
  $owner=qs_owner_hash($l);if(!hash_equals($receipt['owner_hash'],$owner)||$receipt['source_hash']!==$l['sha256']||(int)$receipt['draft_revision']!==(int)$draft['revision'])throw new QuerySettingsError('This operation cannot be recovered for the current session, template or draft version.');
+ if(coop_blocks_generic($l,$receipt['template_row_key']))throw new QuerySettingsError('COOP Consumption is managed by the separate COOP module.');
  $record=$records[$receipt['template_row_key']]??null;
  if(!$record||qs_stable_hash($record)!==$receipt['record_hash'])throw new QuerySettingsError('The saved configuration changed after this operation. Test Query again.');
  if(qs_stable_hash(qs_area_metadata())!==$receipt['area_hash'])throw new QuerySettingsError('Area mappings changed after this operation. Test Query again.');

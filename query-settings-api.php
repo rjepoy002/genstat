@@ -79,6 +79,7 @@ try{
      if(!$tested||$tested['expires']<=time()||!hash_equals($tested['token'],$operationId)||$tested['revision']!==$draft['revision'])
       throw new QuerySettingsError('Test Query again. The test is missing or expired.');
      $config=qs_normalize($l,qs_editor_input($l,$body['config']??[],$records));$key=$config['rowKey'];
+     if(coop_blocks_generic($l,$key))throw new QuerySettingsError('COOP Consumption is managed by the separate COOP module.');
      if(!hash_equals($tested['fingerprint'],qs_fingerprint($config,$l))||$tested['recordHash']!==qs_stable_hash($records[$key]??null))
       throw new QuerySettingsError('The reporting period or settings changed. Test Query again.');
      $area=qs_area_metadata();$areaHash=qs_stable_hash($area);
@@ -89,8 +90,10 @@ try{
      if($matched['errors']||!$matched['changes'])throw new QuerySettingsError($matched['errors'][0]??'No eligible SQL values to apply.');
      $expectedRevision=(int)($records[$key]['revision']??0);$sameConfig=isset($records[$key])&&qs_config_hash(qs_record_config($records[$key]))===qs_config_hash($config)&&$records[$key]['template_hash']===$l['sha256'];$newRevision=$expectedRevision+($sameConfig?0:1);
      $sqlSources=qs_verified_value_sources($l,$values,$body['sqlSources']??[]);
+     $coopSources=coop_verified_sources($l,$body['coopSources']??[]);
      foreach($matched['changes'] as $ref=>$change){$target=qs_targets($l,$config)[$ref]??null;
       if(!$target||$change['rowKey']!==$key||($config['bindings'][$ref]['areaId']??null)!==$change['areaId']||!is_numeric($change['value'])||!is_finite((float)$change['value']))throw new QuerySettingsError('SQL target permission changed: '.$ref);
+      unset($coopSources[$ref]);
       if($change['formulaReplacement']){if(empty($target['formulaReplacement'])||!sql_replacement_row_approved($l,$key))throw new QuerySettingsError('Formula replacement is not permitted: '.$ref);$replacements[$ref]=sql_replacement_issue($l,$ref,$change['value'],$config,$newRevision,$formulas[$ref]??null);unset($formulas[$ref]);}
       else{$values[$ref]=$change['value'];$sqlSources[$ref]=qs_value_source($l,$ref,$change['value']);}
      }
@@ -101,7 +104,7 @@ try{
      if(sql_replacement_row_approved($l,$key))$total=array_column($matched['changes'],'value','ref');
      // Validate the entire working result before touching configuration/history.
      $calculation=base_report_calculate($l,$values+$preview,$formulas,$replacements,$total);$record=qs_save($l,$config,$expectedRevision,$db);
-     $out=['operationId'=>$operationId,'month'=>$month,'record'=>$record,'values'=>(object)$values,'formulas'=>(object)$formulas,'sqlReplacements'=>(object)$replacements,'sqlSources'=>(object)$sqlSources,'calculation'=>$calculation,
+     $out=['operationId'=>$operationId,'month'=>$month,'record'=>$record,'values'=>(object)$values,'formulas'=>(object)$formulas,'sqlReplacements'=>(object)$replacements,'sqlSources'=>(object)$sqlSources,'coopSources'=>(object)$coopSources,'calculation'=>$calculation,
       'previewContext'=>['sqlTargets'=>(object)qs_enabled_value_targets($l,array_replace($records,[$key=>$record])),'preview'=>(object)$preview,'total'=>(object)$total,'previewToken'=>qs_period_preview_token($l,$preview,$total)],
       'draftPending'=>true,'message'=>'Configuration saved and report updated. Use Save Draft to keep the applied values across sessions.'];
      $owner=qs_owner_hash($l);$source=$l['sha256'];$revision=(int)$draft['revision'];$outputHash=qs_overlay_hash($values,$formulas,$replacements);$baselineHash=qs_overlay_hash($draft['values']??[],$draft['formulas']??[],(array)($draft['sqlReplacements']??[]));$configHash=qs_config_hash($config);$recordHash=qs_stable_hash($record);$json=json_encode($out,JSON_THROW_ON_ERROR);$now=gmdate('Y-m-d H:i:s');

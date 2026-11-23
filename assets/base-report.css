@@ -143,3 +143,10 @@ html.dark #genstat-report-table td[data-calculation-error]{color:#fda4af!importa
 #genstat-report-table[data-formulas-unlocked] td[data-original-formula-editable]:not([data-sql-applied]){cursor:text}
 #genstat-report-table [data-manual-formula-override] .value::after{content:' *';color:#a15c07;font-weight:bold}
 .dark #genstat-report-table [data-manual-formula-override] .value::after{color:#fbbf24}
+
+
+#coop-dialog form label{display:grid;gap:4px}
+#coop-dialog :is(input,select){border:1px solid #94a3b8;border-radius:4px;padding:5px;background:inherit;color:inherit}
+#coop-dialog table{width:100%;background:inherit}
+#coop-dialog td,#coop-dialog th{padding:6px!important;background:inherit;color:inherit}
+#coop-password-slash[hidden]{display:none}

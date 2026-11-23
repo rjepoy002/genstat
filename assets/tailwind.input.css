@@ -3,6 +3,8 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../base-report.php";
 @source "../index.php";
+@source "../partials/coop-consumption.php";
+@source "./coop-consumption.js";
 @source "../partials/sql-settings.php";
 @source "./sql-settings.js";
 /* Settings-only components: isolate the dashboard from the workbook grid. */

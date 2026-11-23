@@ -420,6 +420,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await page.locator('input[data-ref="B25"]').inputValue(),'910');
   const sqlLabel=ref=>page.locator(`td[data-ref="${ref}"]`).getAttribute('data-sql-applied');
   assert.equal(await sqlLabel('B25'),'true');
+  assert.match(await page.locator('td[data-ref="B25"]').getAttribute('title'),/SQL Database\nSource: SQL Settings/);
   assert.equal(await sqlLabel('F18'),'true');
   assert.equal(await sqlLabel('Q25'),null);
   await rowSelection.selectOption('genstat-base/Jul26/A18');
@@ -459,7 +460,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await sqlLabel('C25'),'true');
   await page.locator('#report-month').selectOption('202609');
   await page.waitForURL(reportUrl+'?month=202609');
-  assert.equal(await sqlLabel('B25'),'true');
+  assert.equal(await sqlLabel('B25'),null);
   assert.equal(await page.locator('input[data-ref="B25"]').inputValue(),'0');
   await page.locator('#report-month').selectOption('202607');
   await page.waitForURL(july);
@@ -472,12 +473,12 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await page.locator('#sql-disable-config').click();
   await page.locator('#report-confirmation').getByRole('button',{name:'Continue'}).click();
   await idle();
-  assert.equal(await sqlLabel('C25'),null);
+  assert.equal(await sqlLabel('C25'),'true');
   assert.equal(await page.locator('input[data-ref="C25"]').inputValue(),'0');
   await page.locator('#sql-settings-close').click();
   await page.reload();
-  assert.equal(await sqlLabel('C25'),null);
-  console.log('PASS: SQL labels follow direct and formula results, including zero, drafts, manual overrides, enabled status and period refresh.');
+  assert.equal(await sqlLabel('C25'),'true');
+  console.log('PASS: SQL labels follow applied provenance, including zero, drafts, manual overrides and period isolation.');
   fixture('total-unavailable');
   await periodPage.locator('#report-year').selectOption('2026');
   await periodPage.waitForURL(reportUrl+'?month=202609');

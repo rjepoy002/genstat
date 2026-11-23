@@ -7,6 +7,7 @@
  <nav class="flex flex-wrap gap-2 border-b border-slate-200 px-4 py-2 dark:border-slate-600" aria-label="Settings sections">
   <button id="settings-reporting-tab" type="button" aria-controls="settings-reporting" aria-pressed="true">Reporting Configuration</button>
   <button id="settings-appearance-tab" type="button" aria-controls="settings-appearance" aria-pressed="false">Appearance</button>
+  <button id="coop-open" type="button">COOP Consumption</button>
  </nav>
  </div>
  <div id="settings-reporting" class="space-y-4 p-4 sm:p-5">

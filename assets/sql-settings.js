@@ -10,6 +10,10 @@
   const sql=$('sql-editor').value;
   $('sql-month-warning').hidden=!/\b[1-9]\d{3}(?:0[1-9]|1[0-2])\b/.test(sql);
  }
+ $('coop-open').addEventListener('click',async()=>{
+  await close();
+  if(!dialog.open)window.dispatchEvent(new Event('genstat-coop-open'));
+ });
  function invalidateTest(){testGrant=null;clearTimeout(testTimer);}
  function changed(){
   warnFixedMonth();dirty=true;invalidateTest();validationIssues=[];$('sql-formula-message').textContent='';
@@ -97,7 +101,7 @@
  $('sql-sacode-column').addEventListener('input',()=>{for(const input of $('sql-bindings').querySelectorAll('input'))input.hidden=!$('sql-sacode-column').value.trim();});
  $('sql-history').addEventListener('click',()=>operation(async()=>{const result=await api('history',{rowKey:current.key});history=result.history;$('sql-history-select').replaceChildren();for(const item of history){const option=document.createElement('option');option.value=item.id;option.textContent=`v${item.revision} / ${item.created_at} UTC / ${item.current?'Current':'Available'} / ${item.config.enabled?'Enabled':'Disabled'}`;$('sql-history-select').append(option);}$('sql-history-panel').hidden=false;$('sql-history').setAttribute('aria-expanded','true');$('sql-history-load').disabled=!history.length;message(history.length?'Restore a version into the editor, then test before Apply & Save.':'No saved configuration versions for this row.');}));
  $('sql-history-load').addEventListener('click',async()=>{if(dirty&&!await report.confirmAction('Discard unapplied settings and restore the selected configuration into the editor?'))return;const item=history.find(x=>String(x.id)===$('sql-history-select').value);if(item)populateRow(current.key,item.config);});
- $('sql-disable-config').addEventListener('click',async()=>{if(!await report.confirmAction('Disable this saved row configuration? Its SQL and history will be kept; report values will not change.'))return;operation(async()=>{const result=await api('disable',{rowKey:current.key,mappingRevision:Number(meta.records[current.key]?.revision??0),confirmed:true});meta.records[current.key]=result.record;report.disableSqlLabels(current.key);populateRow(current.key);message(result.message);});});
+ $('sql-disable-config').addEventListener('click',async()=>{if(!await report.confirmAction('Disable this saved row configuration? Its SQL and history will be kept; report values will not change.'))return;operation(async()=>{const result=await api('disable',{rowKey:current.key,mappingRevision:Number(meta.records[current.key]?.revision??0),confirmed:true});meta.records[current.key]=result.record;report.disableSqlTargets(current.key);populateRow(current.key);message(result.message);});});
  const loadingDialog=$('sql-apply-loading');
  loadingDialog.addEventListener('cancel',event=>event.preventDefault());
  async function withApplyLoading(fn){

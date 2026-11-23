@@ -133,34 +133,50 @@
  addEventListener('genstat-appearance',sizeNumericColumns);sizeNumericColumns();
  data.sqlReplacements??={};
  data.sqlSources??={};
+ data.coopSources??={};
  data.sqlTargets??={};
- function sqlSource(ref){
-  if(!Object.hasOwn(data.sqlTargets,ref))return false;
-  if(controlled(ref))return data.total[ref]!==null;
-  if(Object.hasOwn(data.sqlReplacements,ref))return true;
-  if(Object.hasOwn(data.values,ref))return Object.hasOwn(data.sqlSources,ref);
-  return Object.hasOwn(data.preview,ref);
+ function cellSource(ref){
+  const replacement=data.sqlReplacements[ref];
+  if(replacement&&(!controlled(ref)||data.total[ref]===replacement.value))return {type:'sql',module:'sql-settings'};
+  if(controlled(ref)||activeFormula(ref))return {type:'formula'};
+  if(Object.hasOwn(data.values,ref)){
+   if(Object.hasOwn(data.sqlSources,ref))return {type:'sql',module:'sql-settings'};
+   const coop=data.coopSources[ref];
+   if(coop?.value===data.values[ref]&&coop.run)return {type:'sql',module:'coop-consumption',run:coop.run,appliedAt:coop.appliedAt};
+   return {type:'manual'};
+  }
+  return {type:Object.hasOwn(data.formulas,ref)?'manual':'excel'};
  }
  function sqlIndicators(){
   for(const cell of table.querySelectorAll('[data-classification]')){
-   const ref=cell.dataset.ref,record=data.sqlReplacements[ref],fromSql=sqlSource(ref);
+   const ref=cell.dataset.ref,record=data.sqlReplacements[ref],source=cellSource(ref);
    cell.dataset.templateTitle??=cell.title;
    cell.setAttribute('aria-readonly',String(controlled(ref)||!data.metadata[ref].editable));
+   cell.dataset.sourceType=source.type;
+   if(source.module)cell.dataset.sourceModule=source.module;
+   else delete cell.dataset.sourceModule;
    cell.toggleAttribute('data-manual-formula-override',Object.hasOwn(data.formulas,ref)&&!controlled(ref)&&!record);
-   if(fromSql)cell.dataset.sqlApplied='true';
+   if(source.type==='sql')cell.dataset.sqlApplied='true';
    else delete cell.dataset.sqlApplied;
-   cell.title=controlled(ref)?ref+' ? SQL-controlled Total KWH Sold':
-    fromSql?(record?`${ref} ? SQL-applied value ? Original template ${record.originalFormula}`:`${ref} ? SQL-applied value`):cell.dataset.templateTitle+(cell.hasAttribute('data-manual-formula-override')?' / Manual formula override':'');
+   cell.title=source.type==='sql'?['SQL Database',source.module==='coop-consumption'?'Source: COOP Consumption':'Source: SQL Settings',
+    'Reporting period: '+formatSourcePeriod(data.month),source.appliedAt?'Applied: '+source.appliedAt:'',
+    source.run?'Application / run: '+source.run:'',
+    record?.originalFormula?'Original template: '+record.originalFormula:''].filter(Boolean).join('\n'):
+    controlled(ref)?ref+' / SQL-controlled Total KWH Sold':cell.dataset.templateTitle+(cell.hasAttribute('data-manual-formula-override')?' / Manual formula override':'');
   }
+ }
+ function formatSourcePeriod(month){
+  return month.slice(0,4)+'-'+month.slice(4);
  }
  function setManualValue(ref,value){
   data.values[ref]=value;
   delete data.sqlSources[ref];
+  delete data.coopSources[ref];
   sqlIndicators();
  }
  sqlIndicators();sizeNumericColumns();
  async function request(action,extra={}){
-  const response=await fetch('base-report.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,values:data.values,formulas:data.formulas,sqlReplacements:data.sqlReplacements,sqlSources:data.sqlSources,preview:data.preview,total:data.total,previewToken:data.previewToken,...extra})});
+  const response=await fetch('base-report.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,values:data.values,formulas:data.formulas,sqlReplacements:data.sqlReplacements,sqlSources:data.sqlSources,coopSources:data.coopSources,preview:data.preview,total:data.total,previewToken:data.previewToken,...extra})});
   if(action==='export'&&response.ok)return response.blob();
   const result=await response.json();if(!response.ok||result.error)throw Error(result.error||'Request failed');return result;
  }
@@ -310,14 +326,14 @@
   if(saving||loading||exporting)return;
   saving=true;saveButton.disabled=true;saveButton.setAttribute('aria-busy','true');
   status.textContent='Saving draft…';status.classList.remove('error');
-  try{await pending;status.textContent='Saving draft…';const result=await request('save');data.revision=result.revision;dirty=false;status.textContent='Draft saved';}
+  try{await pending;status.textContent='Saving draft…';const result=await request('save');data.revision=result.revision;data.coopSources=result.coopSources??data.coopSources;dirty=false;status.textContent='Draft saved';}
   catch(e){status.textContent='Save failed. '+e.message;status.classList.add('error');}
   finally{saving=false;saveButton.disabled=false;saveButton.removeAttribute('aria-busy');}
  });
  // Reviewed SQL values enter the same live draft and Save Draft workflow.
- window.genstatReport={confirmAction,snapshot:()=>({month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,values:structuredClone(data.values),formulas:structuredClone(data.formulas),sqlReplacements:structuredClone(data.sqlReplacements),sqlSources:structuredClone(data.sqlSources)}),
+ window.genstatReport={confirmAction,snapshot:()=>({month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,values:structuredClone(data.values),formulas:structuredClone(data.formulas),sqlReplacements:structuredClone(data.sqlReplacements),sqlSources:structuredClone(data.sqlSources),coopSources:structuredClone(data.coopSources)}),
   previewContext:()=>({preview:data.preview,total:data.total,previewToken:data.previewToken}),
-  disableSqlLabels(rowKey){setRestoreRecovery(null);
+  disableSqlTargets(rowKey){setRestoreRecovery(null);
    for(const [ref,key] of Object.entries(data.sqlTargets))if(key===rowKey)delete data.sqlTargets[ref];
    sqlIndicators();sizeNumericColumns();if(selected)select(selected);
   },
@@ -325,6 +341,7 @@
    data.values=result.values??data.values;data.formulas=result.formulas??data.formulas;
    data.sqlReplacements=result.sqlReplacements??data.sqlReplacements;
    data.sqlSources=result.sqlSources??data.sqlSources;
+   data.coopSources=result.coopSources??data.coopSources;
    dirty=true;
    status.textContent='SQL values applied · Unsaved changes';
    if(result.previewContext){
@@ -345,6 +362,15 @@
      }
     }).catch(e=>{status.textContent=e.message;status.classList.add('error');});
    }else{renderCalculation(result.calculation,true);if(selected)select(selected);}
+  },
+  applyCoopResult(result){
+   if(result.month!==data.month||!result.calculation?.cells)throw Error('The COOP result belongs to another report.');
+   setRestoreRecovery(null);
+   data.values=result.values;data.sqlSources=result.sqlSources;data.coopSources=result.coopSources;
+   dirty=true;sqlIndicators();renderCalculation(result.calculation,true);
+   if(selected)select(selected);
+   status.classList.remove('error');
+   status.textContent=result.message;
   },
   ready:()=>pending};
  const restoreButton=document.querySelector('#restore-sql');

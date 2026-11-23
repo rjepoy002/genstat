@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/coop-report.php';
 require_once __DIR__.'/base-report.php';
 require_once __DIR__.'/base-report-view.php';
 require_once __DIR__.'/report-areas.php';
@@ -184,6 +185,7 @@ function qs_verified_value_sources(array $layout,array $values,$sources): array 
 function qs_enabled_value_targets(array $layout,array $records): array {
  $rows=qs_rows($layout);$targets=[];
  foreach($records as $key=>$record){
+  if(coop_blocks_generic($layout,$key))continue;
   if(!$record['enabled']||$record['template_hash']!==$layout['sha256']||!isset($rows[$key]))continue;
   foreach(array_intersect_key(qs_targets($layout,['rowKey'=>$key]),$record['bindings']) as $ref=>$cell)$targets[$ref]=$key;
  }
@@ -199,7 +201,7 @@ function qs_period_preview(array $layout,bool $onlyTotal=false,bool $strict=fals
  $area=null;$values=[];$total=[];$results=[];$matchedRows=[];
  $rows=qs_rows($layout);$month=base_report_month($layout);
  foreach($records as $key=>$record){
-  if(!$record['enabled'])continue;
+  if(!$record['enabled']||(coop_blocks_generic($layout,$key)))continue;
   if(!isset($rows[$key])){
    if($strict&&str_starts_with($key,'genstat-base/'.$layout['sheets'][0]['name'].'/'))throw new QuerySettingsError('An enabled saved configuration no longer maps to a report row: '.$key);
    continue;

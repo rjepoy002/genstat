@@ -4,6 +4,7 @@ if(PHP_SAPI!=='cli')exit;
 $action=$argv[1]??'';$root=realpath($argv[2]??'');$temp=realpath(sys_get_temp_dir());
 if(!$root||!$temp||strtolower(dirname($root))!==strtolower($temp)||!str_starts_with(basename($root),'genstat-apply-save-'))throw new RuntimeException('Unsafe isolated test root.');
 $c=(require __DIR__.'/../config/monthly-source.php')['connection'];mysqli_report(MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT);
+if(!in_array($c['host'],['127.0.0.1','::1','localhost'],true))throw new RuntimeException('Test fixtures require a loopback server.');
 $db=new mysqli($c['host'],$c['user'],$c['password'],$c['database'],$c['port']);$db->set_charset('utf8mb4');
 function fixture_production_hash(mysqli $db,string $schema): string {$all=[];foreach(['genstat_query_definitions','genstat_row_query_mappings','genstat_query_history','genstat_query_apply_operations'] as $table)$all[$table]=$db->query("SELECT * FROM `$schema`.`$table` ORDER BY ".($table==='genstat_query_apply_operations'?'sequence_id':'id'))->fetch_all(MYSQLI_ASSOC);return hash('sha256',json_encode($all,JSON_THROW_ON_ERROR));}
 if($action==='setup'){
@@ -19,9 +20,79 @@ if($action==='setup'){
  $stmt=$db->prepare("INSERT INTO genstat_row_query_mappings(template_row_key,template_hash,row_label,query_definition_id,value_column,bindings_json,excluded_json,enabled,created_at,updated_at) VALUES(?,?,?,?,'TotalKWhSold',?,'[]',0,?,?)");$stmt->bind_param('sssisss',$key,$hash,$label,$id,$json,$now,$now);$stmt->execute();echo "Isolated writer database and disabled legacy fixture created. Reader account/source tables unchanged.\n";exit;
 }
 $state=json_decode(file_get_contents($root.'/fixture-state.json'),true,512,JSON_THROW_ON_ERROR);$schema=$state['schema'];$user=$state['user'];if(!preg_match('/^genstat_apply_test_[a-f0-9]{12}$/D',$schema)||!preg_match('/^genstat_apply_[a-f0-9]{10}$/D',$user))throw new RuntimeException('Unsafe test schema/account.');if($action==='cleanup'){
- $unchanged=fixture_production_hash($db,$c['database'])===$state['productionHash'];$db->query("DROP USER IF EXISTS '$user'@'127.0.0.1'");$db->query("DROP DATABASE IF EXISTS `$schema`");if(!$unchanged)throw new RuntimeException('Production settings changed during the test; fixture did not write them.');echo "Isolated schema/account removed; production configurations/history/receipts unchanged.\n";exit;
+ $unchanged=fixture_production_hash($db,$c['database'])===$state['productionHash'];
+ $db->query("DROP USER IF EXISTS '{$user}_coop'@'127.0.0.1'");
+ $db->query("DROP DATABASE IF EXISTS `{$schema}_coop`");
+ $db->query("DROP USER IF EXISTS '$user'@'127.0.0.1'");$db->query("DROP DATABASE IF EXISTS `$schema`");if(!$unchanged)throw new RuntimeException('Production settings changed during the test; fixture did not write them.');echo "Isolated schema/account removed; production configurations/history/receipts unchanged.\n";exit;
 }
 $db->select_db($schema);
+if($action==='coop-local-grant-write'||$action==='coop-local-revoke-write'){
+ $source=$schema.'_coop';$reader=$user.'_coop';
+ $db->query($action==='coop-local-grant-write'
+  ?"GRANT INSERT ON `$source`.master TO '$reader'@'127.0.0.1'"
+  :"REVOKE INSERT ON `$source`.master FROM '$reader'@'127.0.0.1'");
+ exit;
+}
+if($action==='coop-setup'){
+ if(!in_array($c['host'],['127.0.0.1','localhost','::1'],true))throw new RuntimeException('COOP fixture requires a loopback server.');
+ foreach(explode(';',file_get_contents(__DIR__.'/../migrations/005-coop-consumption.sql')) as $sql)if(trim($sql))$db->query($sql);
+ foreach(['coop_account_lock','coop_enrollment_state','coop_consumption_accounts'] as $table)$db->query("GRANT SELECT,INSERT,UPDATE ON `$schema`.`$table` TO '$user'@'127.0.0.1'");
+ foreach(['coop_audit','coop_runs','coop_applications'] as $table)$db->query("GRANT SELECT,INSERT ON `$schema`.`$table` TO '$user'@'127.0.0.1'");
+ $db->query("CREATE TABLE master(AcctCode VARCHAR(20),AcctNo VARCHAR(20))");
+ $db->query("CREATE TABLE billhistory(AcctNo VARCHAR(20),BillMonth CHAR(6),KWH DECIMAL(20,12))");
+ $db->query("INSERT INTO master VALUES('001','0001'),('002','0002'),('003','0003'),('004','0004'),('101','0001'),('006','0006'),('006','0007')");
+ $db->query("INSERT INTO billhistory VALUES('0001','202607',0.100000000000),('0002','202607',0.200000000000),('0003','202607',0),('0001','202608',12),('0002','202608',15),('0003','202608',0)");
+ foreach(['master','billhistory'] as $table)$db->query("GRANT SELECT ON `$schema`.`$table` TO '$user'@'127.0.0.1'");
+ exit;
+}
+if($action==='coop-dev-audit'){
+ $count=$db->query("SELECT COUNT(DISTINCT action) FROM coop_audit WHERE actor='GENSTAT_LOCAL_DEV' AND period='202607' AND action IN ('consumption-refreshed','preview-generated','consumption-applied') AND JSON_EXTRACT(details,'$.developmentMode')=true AND JSON_EXTRACT(details,'$.areas') IS NOT NULL")->fetch_row()[0];
+ $enrolled=$db->query("SELECT COUNT(*) FROM coop_audit WHERE actor='GENSTAT_LOCAL_DEV' AND period='202608' AND action='enroll' AND JSON_EXTRACT(details,'$.developmentMode')=true AND JSON_EXTRACT(details,'$.after') IS NOT NULL")->fetch_row()[0];
+ if((int)$count!==3||(int)$enrolled!==1)throw new RuntimeException('Development audit identity, period or area missing.');
+ echo "PASS: development audit identity, period, area and marker.\n";
+ exit;
+}
+if($action==='coop-local-source'||$action==='coop-local-source-hash'){
+ $source=$schema.'_coop';$reader=$user.'_coop';
+ if($action==='coop-local-source'){
+  $password=bin2hex(random_bytes(24));
+  $db->query("CREATE DATABASE `$source`");
+  foreach(['master','billhistory'] as $table){
+   $db->query("CREATE TABLE `$source`.$table LIKE $table");
+   $db->query("INSERT INTO `$source`.$table SELECT * FROM $table");
+  }
+  $db->query("CREATE USER '$reader'@'127.0.0.1' IDENTIFIED BY '$password'");
+  foreach(['master','billhistory'] as $table)$db->query("GRANT SELECT ON `$source`.$table TO '$reader'@'127.0.0.1'");
+  echo json_encode(['host'=>'127.0.0.1','port'=>$c['port'],'database'=>$source,'username'=>$reader,'password'=>$password,'ca'=>''],JSON_THROW_ON_ERROR);
+ }else{
+  $master=$db->query("SELECT * FROM `$source`.master ORDER BY AcctCode,AcctNo")->fetch_all(MYSQLI_NUM);
+  $bills=$db->query("SELECT * FROM `$source`.billhistory ORDER BY AcctNo,BillMonth,KWH")->fetch_all(MYSQLI_NUM);
+  echo hash('sha256',json_encode([$master,$bills],JSON_THROW_ON_ERROR));
+ }
+ exit;
+}
+if($action==='coop-bill'){
+ $db->query("INSERT INTO billhistory VALUES('0004','202607',0)");
+ exit;
+}
+if($action==='coop-conflict'){
+ $db->query("UPDATE genstat_row_query_mappings SET template_row_key='genstat-base/Jul26/A26',enabled=1 WHERE template_row_key='genstat-base/Jul26/A11'");
+ exit;
+}
+if($action==='coop-clear-conflict'){
+ $db->query("UPDATE genstat_row_query_mappings SET template_row_key='genstat-base/Jul26/A11',enabled=0 WHERE template_row_key='genstat-base/Jul26/A26'");
+ exit;
+}
+if($action==='coop-export'){
+ require $root.'/lib/workbook-storage.php';
+ $zip=workbook_validate($root.'/coop-export.xlsx');
+ $xml=xml_path(xml_doc(zip_text($zip,'xl/worksheets/sheet1.xml')));
+ if((float)$xml->evaluate('string(//s:c[@r="B26"]/s:v)')!==0.3||
+    $xml->evaluate('count(//s:c[@r="Q26"]/s:f)')!==1.0||
+    abs((float)$xml->evaluate('string(//s:c[@r="Q26"]/s:v)')-10677.3)>1e-8||
+    $xml->evaluate('count(//s:c[@r="R26"]/s:f)')!==1.0)throw new RuntimeException('COOP export lost input or formulas.');
+ echo "PASS: COOP Excel export retains numeric B26 and Q26/R26 formulas.\n";exit;
+}
 if($action==='adjustment-export'){
  require $root.'/lib/workbook-storage.php';
  $zip=workbook_validate($root.'/adjustment-export.xlsx');
