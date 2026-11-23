@@ -43,10 +43,10 @@ const expected=[16,19,21,34,37,46,47];
   assert.equal(await page.locator('th[data-ref="R8"]').count(),0);
   const actions=page.locator('header .report-toolbar button');
   assert.deepEqual(await actions.evaluateAll(buttons=>buttons.map(button=>[button.id,button.dataset.tooltip,button.textContent.trim()])),[
-   ['report-export','Export Excel',''],['save','Save Draft',''],['report-formula-history','Formula Edit History',''],['sql-settings-open','Settings',''],
+   ['report-export','Export Excel',''],['recovered-sales-open','Recovered Sales',''],['save','Save Draft',''],['report-formula-history','Formula Edit History',''],['sql-settings-open','Settings',''],
   ]);
   await page.locator('#report-month').focus();
-  for(const [i,label] of ['Export Excel','Save Draft','Formula Edit History','Settings'].entries()){
+  for(const [i,label] of ['Export Excel','Recovered Sales','Save Draft','Formula Edit History','Settings'].entries()){
    await page.keyboard.press('Tab');
    const tooltip=await actions.nth(i).evaluate(button=>({focused:button===document.activeElement,style:getComputedStyle(button,'::after').visibility,text:getComputedStyle(button,'::after').content}));
    assert.deepEqual(tooltip,{focused:true,style:'visible',text:JSON.stringify(label)});

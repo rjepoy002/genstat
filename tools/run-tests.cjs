@@ -5,7 +5,7 @@ const root=path.resolve(__dirname,'..');
 const aliases=Object.fromEntries(['query-settings-browser','query-calculation-lifecycle','sql-formula-replacement-browser','brookes-point-review-browser'].map(x=>['tests/'+x+'.cjs','tests/query-apply-save-browser.cjs']));
 aliases['tests/ui.cjs']='tests/cell-editing-browser.cjs';
 const unit=['query-settings','query-calculation-settings','sql-formula-replacement','brookes-point','base-report-view','auth-setup','editing-policy','auto-refresh','sync-reconciliation','monthly-worksheets','refresh','formulas','number-format','verify','base-report','workbook-storage'].map(x=>'tests/'+x+'.php').concat(['tests/query-parser.cjs','tests/test-runner.cjs','tests/edit-history.cjs','tests/formula-references.cjs']);
-const compact=['sql-settings-style','sql-settings-ui','query-calculation-browser','reporting-allowlist-browser','brookes-point-browser','base-report-compact','base-report-browser'].map(x=>'tests/'+x+'.cjs');
+const compact=['sql-settings-style','sql-settings-ui','query-calculation-browser','reporting-allowlist-browser','brookes-point-browser','base-report-compact','base-report-browser','recovered-sales-browser'].map(x=>'tests/'+x+'.cjs');
 const browser=compact.concat(['query-apply-save-browser','cell-editing-browser','undo-resync-browser','headers-browser'].map(x=>'tests/'+x+'.cjs'));
 function plan(files){return [...new Set(files.map(f=>{f=f.replace(/\\/g,'/').replace(/^\.\//,'');return aliases[f]||f;}))];}
 function copyDir(from,to){fs.cpSync(from,to,{recursive:true});}
@@ -58,6 +58,10 @@ async function main(){
       if(compact.includes(file)){
         fixture=sandbox(file);
         prepareCompact(fixture);
+        if(file==='tests/recovered-sales-browser.cjs'){
+          for(const input of ['excel-files/active/genstat_2026.xlsx','tests/recovered-sales-export.php'])
+            fs.copyFileSync(path.join(root,input),path.join(fixture,input));
+        }
         const hosted=startCompactServer(fixture);
         server=hosted.server;
         serverLog=hosted.log;

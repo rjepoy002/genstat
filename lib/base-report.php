@@ -4,6 +4,7 @@ require_once __DIR__.'/../tools/build-layout.php';
 require_once __DIR__.'/render.php';
 require_once __DIR__.'/formula-engine.php';
 require_once __DIR__.'/sql-replacements.php';
+require_once __DIR__.'/recovered-sales.php';
 
 function base_report_draft_path(array $layout): string {
  return __DIR__.'/../storage/base-report-'.base_report_scope($layout).'.json';
@@ -55,16 +56,28 @@ function base_report_validate(array $l,array $values,array $formulas=[]): void {
  $engine=new FormulaEngine($l);
  foreach($formulas as $ref=>$formula){$c=$l['sheets'][0]['cells'][$ref]??null;if(!$c||$c['classification']!=='formula'||!range_contains($l['report']['range'],$ref))throw new InvalidArgumentException('Unknown formula: '.$ref);if(!is_string($formula))throw new InvalidArgumentException('Invalid formula.');if(str_starts_with($formula,'='))$engine->validate($formula,$l['sheets'][0]['name']);elseif(!is_numeric($formula)||!is_finite((float)$formula)||strlen($formula)>32767)throw new InvalidArgumentException('Enter a number or supported Excel formula.');}
 }
+function base_report_recovery_state(array $layout): array {
+ return recov_state(dirname(__DIR__),base_report_month($layout),array_keys(recov_area_columns($layout)));
+}
+
 function base_report_calculate(array $l,array $values=[],array $formulas=[],array $replacements=[],array $total=[]): array {
  base_report_validate($l,$values,$formulas);sql_replacement_validate($l,$replacements,$formulas);$s=$l['sheets'][0];
- $sql=$replacements;
- foreach($total as $ref=>$value){$sql[$ref]=['value'=>$value??'#N/A'];unset($values[$ref],$formulas[$ref]);}
- $working=sql_replacement_working_layout($l,$sql);
- foreach($total as $ref=>$value)if($value===null)$working['sheets'][0]['cells'][$ref]['type']='e';
+ $recovered=[];
+ if(isset($l['reportMonth'])){
+  $recovered=recov_summary($l,$l['recoveryState']??base_report_recovery_state($l),base_report_month($l));
+ }
+ $sourceInputs=$replacements;
+ foreach($total as $ref=>$value){$sourceInputs[$ref]=['value'=>$value??'#N/A'];unset($values[$ref],$formulas[$ref]);}
+ foreach($recovered as $ref=>$value){
+  $sourceInputs[$ref]=['value'=>$value??''];
+  unset($values[$ref],$formulas[$ref]);
+ }
+ $working=sql_replacement_working_layout($l,$sourceInputs);
+ foreach($total as $ref=>$value)if($value===null&&!array_key_exists($ref,$recovered))$working['sheets'][0]['cells'][$ref]['type']='e';
  if(base_report_month($l)!==BASE_REPORT_LEGACY_MONTH){
   foreach($working['sheets'][0]['cells'] as $ref=>&$cell){
    $meta=$cell['metadata'];
-   if($meta['column']<2||$meta['row']<=$l['report']['firstRow']+1||!range_contains($l['report']['range'],$ref)||isset($sql[$ref]))continue;
+   if($meta['column']<2||$meta['row']<=$l['report']['firstRow']+1||!range_contains($l['report']['range'],$ref)||isset($sourceInputs[$ref]))continue;
    $formula=$meta['effectiveFormula'];
    if($formula!==null||is_numeric($cell['value'])){$cell['value']='';$cell['type']='';}
    // The workbook has two literal-only July formulas. Their expressions stay
@@ -79,10 +92,10 @@ function base_report_calculate(array $l,array $values=[],array $formulas=[],arra
   try{$value=$engine->value($s['name'],$ref);$error=null;}catch(FormulaError $e){$value=$e->getMessage();$error=$value;}
   $display=$cell;$display['value']=is_bool($value)?($value?'1':'0'):($value===null?'':(is_float($value)?sprintf('%.17g',$value):(string)$value));
   if(isset($values[$ref])||array_key_exists($ref,$total)||$cell['classification']==='formula')$display['type']=$error?'e':(is_numeric($value)?'n':'str');
-  $out[$ref]=['value'=>$value,'display'=>display_value($display,$l),'error'=>$error];
+  $out[$ref]=['value'=>$value,'display'=>isset($recovered[$ref])?number_format((float)$recovered[$ref],2):display_value($display,$l),'error'=>$error];
  }
  $warnings=[];foreach($engine->warnings as $key=>$message){$ref=substr($key,strpos($key,'!')+1);$warnings[]=['cell'=>$key,'formula'=>expanded_formulas($s)[$ref]??null,'message'=>$message];}
- return ['cells'=>$out,'warnings'=>$warnings,'errors'=>$engine->errors];
+ return ['cells'=>$out,'warnings'=>$warnings,'errors'=>$engine->errors,'recoveredSales'=>(object)$recovered];
 }
 
 function base_report_formula_editable(array $layout,string $ref): bool {
@@ -90,7 +103,8 @@ function base_report_formula_editable(array $layout,string $ref): bool {
  return ($sheet['cells'][$ref]['classification']??null)==='formula'
   &&range_contains($layout['report']['range'],$ref)
   &&cell_coordinates($ref)[1]>$layout['report']['firstRow']+1
-  &&sql_replacement_cell_allowed($sheet,$ref);
+  &&sql_replacement_cell_allowed($sheet,$ref)
+  &&(!isset($layout['reportMonth'])||!isset(recov_targets($layout)[$ref]));
 }
 function base_report_formula_audit(array $layout): array {
  $path=base_report_draft_path($layout).'.formula-audit.json';

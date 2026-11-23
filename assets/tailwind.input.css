@@ -4,6 +4,7 @@
 @source "../base-report.php";
 @source "../index.php";
 @source "../partials/sql-settings.php";
+@source "../partials/recovered-sales.php";
 @source "./sql-settings.js";
 /* Settings-only components: isolate the dashboard from the workbook grid. */
 #sql-settings-dialog.sql-modal{width:min(1440px,94vw);max-width:94vw;max-height:94dvh;border-radius:16px;margin:auto;overflow:auto;scroll-padding-top:8.5rem;scrollbar-gutter:stable;box-shadow:0 24px 80px #0f172a45;font:13px Arial,sans-serif;background:#f8fafc}

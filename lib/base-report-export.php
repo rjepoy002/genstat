@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/recovered-sales-export.php';
 
 function base_report_export(array $layout,array $values,array $formulas,array $replacements,array $calculation,array $total=[]): string {
  $source=__DIR__.'/../excel-files/reference/GENSTAT_BASE.xlsx';
@@ -12,7 +13,15 @@ function base_report_export(array $layout,array $values,array $formulas,array $r
   $rows[$row->getAttribute('r')]=$row;
   foreach($xpath->query('s:c',$row) as $node)$cells[$node->getAttribute('r')]=$node;
  }
- $edits=$total+$formulas+$replacements;$groups=[];
+ $recovered=(array)($calculation['recoveredSales']??[]);
+ $recoveryState=$layout['recoveryState']??base_report_recovery_state($layout);
+ $recoveryTargets=$recovered?recov_targets($layout):[];
+ $styles=xml_doc(zip_text($zip,'xl/styles.xml'));
+ $styleIndices=[0];
+ foreach($recoveryTargets as $ref=>$area)$styleIndices[]=$sheet['cells'][$ref]['style'];
+ $decimalStyles=recov_decimal_styles($styles,$styleIndices);
+ $lastRecoveryRow=max(2,count($recoveryState['records'])+1);
+ $edits=$recovered+$total+$formulas+$replacements;$groups=[];
  foreach($edits as $ref=>$unused){
   $attributes=$sheet['cells'][$ref]['formulaAttributes']??[];
   if(($attributes['t']??null)==='shared')$groups[$attributes['si']]=true;
@@ -29,7 +38,7 @@ function base_report_export(array $layout,array $values,array $formulas,array $r
  $month=base_report_month($layout);
  foreach($calculation['cells'] as $ref=>$result){
   $model=$sheet['cells'][$ref];$node=$cells[$ref]??null;
-  if((isset($values[$ref])||array_key_exists($ref,$total))&&!$node){
+  if((isset($values[$ref])||array_key_exists($ref,$total)||array_key_exists($ref,$recovered))&&!$node){
    [$column,$number]=cell_coordinates($ref);
    $row=$rows[$number]??null;
    if(!$row)throw new RuntimeException('Workbook is missing report row '.$number.'.');
@@ -38,6 +47,20 @@ function base_report_export(array $layout,array $values,array $formulas,array $r
    $row->insertBefore($node,$next);
   }
   if(!$node)continue;
+  if(array_key_exists($ref,$recovered)){
+   $node->setAttribute('s',(string)$decimalStyles[$model['style']]);
+   write_cell_value($doc,$node,'');
+   $area='"'.str_replace('"','""',$recoveryTargets[$ref]).'"';
+   $monthRange='RecovBill_Data!$B$2:$B$'.$lastRecoveryRow;
+   $areaRange='RecovBill_Data!$C$2:$C$'.$lastRecoveryRow;
+   $usedRange='RecovBill_Data!$D$2:$D$'.$lastRecoveryRow;
+   $criteria=$monthRange.',"'.$month.'",'.$areaRange.','.$area;
+   $formula='IF(COUNTIFS('.$criteria.')=0,"",SUMIFS('.$usedRange.','.$criteria.'))';
+   $node->appendChild($doc->createElementNS($ns,'f'))->textContent=$formula;
+   if($recovered[$ref]===null)$node->setAttribute('t','str');
+   $node->appendChild($doc->createElementNS($ns,'v',$recovered[$ref]??''));
+   continue;
+  }
   if(array_key_exists($ref,$total)){
    write_cell_value($doc,$node,$total[$ref]??'#N/A');
    if($total[$ref]===null){
@@ -74,7 +97,9 @@ function base_report_export(array $layout,array $values,array $formulas,array $r
   // recalculates the original template expressions in Excel.
   $calc->setAttribute('calcMode','manual');$calc->setAttribute('fullCalcOnLoad','0');$calc->setAttribute('forceFullCalc','0');$calc->setAttribute('calcOnSave','0');
  }
- $changes=[$part=>$doc->saveXML(),'xl/workbook.xml'=>$workbook->saveXML()];
+ $changes=[$part=>$doc->saveXML(),'xl/workbook.xml'=>$workbook->saveXML(),'xl/styles.xml'=>$styles->saveXML()];
  if($edits)xlsx_remove_calc_chain($zip,$changes);
+ foreach(['xl/_rels/workbook.xml.rels','[Content_Types].xml','xl/styles.xml'] as $packagePart)$changes[$packagePart]??=zip_text($zip,$packagePart);
+ recov_export_sheets($changes,dirname(__DIR__),$recoveryState['records'],$decimalStyles[0]);
  return zip_write($zip,$changes);
 }

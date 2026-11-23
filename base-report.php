@@ -28,6 +28,15 @@ try{
    $_SESSION['baseReportMonth']=$month;
    echo $json;exit;
   }
+  if(in_array($body['action']??null,['recovered-sales-load','recovered-sales-save'],true)){
+   require_once __DIR__.'/lib/recovered-sales.php';
+   session_write_close();
+   $areas=array_keys(recov_area_columns($l));
+   $view=$body['action']==='recovered-sales-save'
+    ?recov_save(__DIR__,$month,$body,(string)($_SERVER['REMOTE_USER']??''),$areas)
+    :recov_view(recov_state(__DIR__,$month,$areas),$month);
+   echo json_encode($view+['areas'=>$areas,'maxRows'=>RECOV_MAX_ROWS,'monthLabel'=>base_report_month_label($month)],JSON_THROW_ON_ERROR);exit;
+  }
   if(($body['revision']??null)!==$draft['revision'])throw new RuntimeException('Another window saved this report. Reload before editing.');
   if(!in_array($body['action']??null,['calculate','unlock','lock-formulas','edit-formula','undo-formula','restore-report','undo-restore','save','export'],true))throw new RuntimeException('Unknown report action.');
   $values=$body['values']??[];$formulas=$body['formulas']??[];$replacements=$body['sqlReplacements']??[];base_report_validate($l,$values,$formulas);sql_replacement_validate($l,$replacements,$formulas);sql_replacement_submission($l,$replacements,$draft['sqlReplacements']);
@@ -141,6 +150,7 @@ try{
    elseif($token!==null)$_SESSION['baseRestoreOperation'][$scope]=['token'=>$token,'previous'=>$current,'restoredHash'=>qs_stable_hash($next)];
    echo $json;exit;
   }
+  if($body['action']==='export')$l['recoveryState']=base_report_recovery_state($l);
   $result=base_report_calculate($l,$values+$preview,$formulas,$replacements,$total);
   if($body['action']==='export'){
    require_once __DIR__.'/lib/base-report-export.php';
@@ -166,7 +176,7 @@ try{
  unset($_SESSION['baseWorksheetUnlock']);
  $_SESSION['baseReportMonth']=$month;$monthLabel=base_report_month_label($month);
 }catch(Throwable $e){
- http_response_code($e instanceof QuerySettingsError&&$e->getCode()===503?503:400);
+ http_response_code($e instanceof QuerySettingsError&&$e->getCode()===503?503:($e->getCode()===409?409:400));
  $message=!empty($loading)&&!($e instanceof QuerySettingsError)?'The report could not be loaded. Please try again.':$e->getMessage();
  if($_SERVER['REQUEST_METHOD']==='POST'){header('Content-Type: application/json');echo json_encode(['error'=>$message]);}else echo bh($message);exit;
 }
@@ -183,6 +193,7 @@ $coordinateClass='excel-coordinate bg-slate-100 font-medium text-slate-600 dark:
 <label class="report-month">Month <select id="report-month"><?php foreach(array_reverse($months) as $option):if(substr($option,0,4)!==substr($month,0,4))continue;?><option value="<?=bh($option)?>" <?=$option===$month?'selected':''?>><?=bh(strtok(base_report_month_label($option),' '))?></option><?php endforeach;?></select></label>
 <span id="report-period" aria-live="polite"><?=bh($monthLabel)?></span><div class="report-toolbar ml-auto flex shrink-0 items-center gap-1" role="group" aria-label="Report actions">
  <button id="report-export" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150" aria-label="Export Excel" data-tooltip="Export Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm0 0v6h6m-8 3v6m-3-3 3 3 3-3"/></svg></button>
+ <button id="recovered-sales-open" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150" aria-label="Recovered Sales" data-tooltip="Recovered Sales" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M8 13h2m4 0h2m-8 4h2m4 0h2"/></svg></button>
  <button id="save" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150" aria-label="Save Draft" data-tooltip="Save Draft"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h13l4 4v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm3 0v6h9V3m1 18v-8H7v8"/></svg><span class="save-spinner" aria-hidden="true"></span></button>
  <button id="report-formula-history" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150" aria-label="Formula Edit History" title="Formula Edit History" data-tooltip="Formula Edit History" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.6 6.4M3 5v7h7m2-5v5l4 2"/></svg></button>
  <button id="sql-settings-open" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150" aria-label="Settings" data-tooltip="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-1 4 3 1 2 3 3-1 3 1 2-3 3-1-1-4 2-2-2-3-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/></svg></button>
@@ -206,7 +217,7 @@ $visibleSpan=0;for($column=$c;$column<$c+$span[0];$column++)if(empty($hiddenColu
 $headingText=$fullHeading?implode("\n",array_column($areaHeaders[$c]['fragments']??[['value'=>$cell['value']]],'value')):null;
 ?><<?=$tag?> data-ref="<?=$ref?>" <?=isset($mergeEnds[$ref])?'data-excel-range-end="'.bh($mergeEnds[$ref]).'"':''?> <?=$visibleSpan===0?'hidden':''?> data-classification="<?=bh($cell['classification'])?>" <?=base_report_formula_editable($l,$ref)?'data-original-formula-editable':''?> <?=!empty($calc['cells'][$ref]['error'])?'data-calculation-error':''?> <?=$rowToggle?'':'tabindex="0"'?> aria-readonly="<?=$cell['editable']?'false':'true'?>" colspan="<?=max(1,$visibleSpan)?>" rowspan="<?=$span[1]?>" class="<?=$c===1?'particulars ':''?><?=$c>=$totalStart?'total-column ':''?><?=$tag==='th'?'header-cell':''?>" style="<?=bh(css_text($css))?>" <?=$c===1?'aria-label="'.bh($cell['value']).'"':''?> title="<?=bh($ref.' · '.$cell['classification'].($c===1?' · '.$cell['value']:'').($cell['formula']!==null?' · '.(expanded_formulas($s)[$ref]??$cell['formula']):''))?>">
 
-<?php if($fullHeading):?><span class="value"><?=bh($headingText)?></span><?php elseif($rowToggle):?><button type="button" class="report-row-toggle block w-full cursor-pointer" aria-pressed="false"><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span></button><?php elseif($cell['editable']):?><input <?=array_key_exists($ref,$total)?'readonly':''?> aria-label="<?=bh($ref.' '.$cell['classification'])?>" data-ref="<?=$ref?>" value="<?=bh(array_key_exists($ref,$total)?($total[$ref]??''):($draft['values'][$ref]??($month!==BASE_REPORT_LEGACY_MONTH&&is_numeric($cell['value'])?'':$cell['value'])))?>"><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span><?php else:?><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span><?php endif;?></<?=$tag?>>
+<?php if($fullHeading):?><span class="value"><?=bh($headingText)?></span><?php elseif($rowToggle):?><button type="button" class="report-row-toggle block w-full cursor-pointer" aria-pressed="false"><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span></button><?php elseif($cell['editable']&&!property_exists($calc['recoveredSales'],$ref)):?><input <?=array_key_exists($ref,$total)?'readonly':''?> aria-label="<?=bh($ref.' '.$cell['classification'])?>" data-ref="<?=$ref?>" value="<?=bh(array_key_exists($ref,$total)?($total[$ref]??''):($draft['values'][$ref]??($month!==BASE_REPORT_LEGACY_MONTH&&is_numeric($cell['value'])?'':$cell['value'])))?>"><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span><?php else:?><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span><?php endif;?></<?=$tag?>>
 <?php endfor;?></tr><?php endfor;?></tbody></table></main>
 <div class="report-notice flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
  <div class="report-draft flex flex-wrap items-center gap-2"><span id="status" role="status"><?=$draft['revision']>0?'Draft loaded':'No saved report data.'?><?=in_array(null,$total,true)?' Total KWH Sold is unavailable.':''?></span><span id="restore-notice" role="status" class="rounded-md bg-emerald-50 px-2 py-1 text-emerald-900 empty:absolute empty:p-0 data-[error]:bg-red-50 data-[error]:text-red-900 dark:bg-emerald-950 dark:text-emerald-100 dark:data-[error]:bg-red-950 dark:data-[error]:text-red-100"></span><button id="undo-formula" type="button" hidden>Undo Formula Edit</button><button id="undo-restore" class="rounded-md border border-slate-300! px-2! py-1! font-semibold focus-visible:ring-2 focus-visible:ring-blue-600 dark:border-slate-600!" type="button" hidden>Undo Restore</button><button id="report-retry" type="button" hidden>Retry</button></div>
@@ -223,17 +234,24 @@ $headingText=$fullHeading?implode("\n",array_column($areaHeaders[$c]['fragments'
  </div>
 </div>
 <?php require __DIR__.'/partials/sql-settings.php';?>
+<?php require __DIR__.'/partials/recovered-sales.php'; ?>
 <dialog id="report-confirmation" class="fixed inset-0 m-auto w-[min(460px,92vw)] rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl backdrop:bg-black/60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" aria-labelledby="report-confirmation-title" aria-describedby="report-confirmation-message report-confirmation-warning report-confirmation-detail">
  <form method="dialog">
   <h2 id="report-confirmation-title" class="m-0 text-lg font-semibold">Confirm report action</h2>
   <p id="report-confirmation-message" class="my-3"></p>
   <p id="report-confirmation-warning" class="my-3 items-start gap-2 rounded-md bg-amber-50 p-3 text-amber-900 not-hidden:flex dark:bg-amber-950 dark:text-amber-100" hidden><svg class="size-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.8 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 4h.01"/></svg><span>Any unsaved manual changes to affected cells will be replaced.</span></p>
   <p id="report-confirmation-detail" class="my-3" hidden></p>
+  <dl id="report-confirmation-recovery" class="my-4 not-hidden:grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 rounded-md bg-slate-100 p-3 text-sm dark:bg-slate-700" hidden>
+   <dt>Total KWH Used</dt><dd class="m-0 text-right tabular-nums"></dd>
+   <dt>Total KWH Paid</dt><dd class="m-0 text-right tabular-nums"></dd>
+   <dt>Total Remaining KWH</dt><dd class="m-0 text-right tabular-nums"></dd>
+   <dt>Breakdown entries</dt><dd class="m-0 text-right tabular-nums"></dd>
+  </dl>
   <div class="flex flex-wrap justify-end gap-2">
-   <button value="cancel" class="rounded-md px-4! py-2! transition-colors focus-visible:ring-2 focus-visible:ring-blue-600" autofocus>Cancel</button>
-   <button value="confirm" class="rounded-md border-transparent! bg-blue-700! px-4! py-2! font-semibold text-white! transition-colors hover:bg-blue-800! focus-visible:ring-2 focus-visible:ring-blue-600 data-[restore]:bg-red-700! data-[restore]:hover:bg-red-800!">Continue</button>
+   <button value="cancel" class="h-9 rounded-md px-4! text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-50" autofocus>Cancel</button>
+   <button value="confirm" class="h-9 rounded-md border-transparent! bg-blue-700! px-4! text-sm font-semibold disabled:opacity-50 text-white! transition-colors hover:bg-blue-800! focus-visible:ring-2 focus-visible:ring-blue-600 data-[restore]:bg-red-700! data-[restore]:hover:bg-red-800!">Continue</button>
   </div>
  </form>
 </dialog>
 <dialog id="report-formula-history-dialog" class="fixed inset-0 m-auto w-[min(540px,92vw)] rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl backdrop:bg-black/60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" aria-labelledby="report-formula-history-title"><form method="dialog"><h2 id="report-formula-history-title" class="m-0 text-lg font-semibold">Formula Edit History</h2><p id="report-formula-history-empty">No manual formula changes have been recorded.</p><ol id="report-formula-history-list" class="space-y-3 break-words p-0"></ol><button autofocus class="rounded-md focus-visible:ring-2">Close</button></form></dialog>
-<script type="application/json" id="report-data"><?=json_encode(['total'=>(object)$total,'sqlTargets'=>(object)$reportSql['sqlTargets'],'sqlSources'=>(object)qs_verified_value_sources($l,$draft['values'],$draft['sqlSources']),'previewToken'=>qs_period_preview_token($l,[],$total),'periods'=>$months,'csrf'=>base_report_csrf($month),'month'=>$month,'hash'=>$l['sha256'],'revision'=>$draft['revision'],'values'=>(object)$draft['values'],'formulas'=>(object)$draft['formulas'],'sqlReplacements'=>(object)$draft['sqlReplacements'],'metadata'=>array_map(fn($c)=>$c['metadata'],$s['cells']),'formulaAudit'=>base_report_formula_audit($l),'warnings'=>$calc['warnings'],'errors'=>$calc['errors']],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR)?></script><script src="assets/formula-references.js"></script><script src="assets/base-reference-highlights.js"></script><script src="assets/edit-history.js"></script><script src="assets/base-report.js"></script><script src="assets/sql-settings.js"></script></body></html>
+<script type="application/json" id="report-data"><?=json_encode(['recoveredSales'=>$calc['recoveredSales'],'total'=>(object)$total,'sqlTargets'=>(object)$reportSql['sqlTargets'],'sqlSources'=>(object)qs_verified_value_sources($l,$draft['values'],$draft['sqlSources']),'previewToken'=>qs_period_preview_token($l,[],$total),'periods'=>$months,'csrf'=>base_report_csrf($month),'month'=>$month,'hash'=>$l['sha256'],'revision'=>$draft['revision'],'values'=>(object)$draft['values'],'formulas'=>(object)$draft['formulas'],'sqlReplacements'=>(object)$draft['sqlReplacements'],'metadata'=>array_map(fn($c)=>$c['metadata'],$s['cells']),'formulaAudit'=>base_report_formula_audit($l),'warnings'=>$calc['warnings'],'errors'=>$calc['errors']],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR)?></script><script src="assets/formula-references.js"></script><script src="assets/base-reference-highlights.js"></script><script src="assets/edit-history.js"></script><script src="assets/base-report.js"></script><script src="assets/sql-settings.js"></script><script src="assets/recovered-sales.js"></script></body></html>

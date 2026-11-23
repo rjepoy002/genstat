@@ -12,6 +12,10 @@ function zip_read(string $path): array {
 }
 function zip_text(array $zip,string $name): string {if(!isset($zip[$name])) throw new RuntimeException("Missing ZIP part: $name"); $e=$zip[$name]; return match($e['header']['method']) {0=>$e['compressed'],8=>gzinflate($e['compressed']),default=>throw new RuntimeException('Unsupported compression')};}
 function zip_write(array $zip,array $changes): string {
+ // New parts start with neutral ZIP metadata and are compressed below.
+ foreach(array_diff_key($changes,$zip) as $name=>$raw){
+  $zip[$name]=['header'=>['made'=>20,'flags'=>0,'time'=>0,'date'=>33,'internal'=>0,'external'=>0],'compressed'=>''];
+ }
  $body='';$directory=''; foreach($zip as $name=>$e) { $h=$e['header'];$bytes=$e['compressed'];if(array_key_exists($name,$changes)) {$raw=$changes[$name];$bytes=gzdeflate($raw);$h['method']=8;$h['crc']=crc32($raw);$h['size']=strlen($raw);}
  $offset=strlen($body);$len=strlen($bytes);$flags=$h['flags'] & ~8;
  $body.="PK\x03\x04".pack('vvvvvVVVvv',20,$flags,$h['method'],$h['time'],$h['date'],$h['crc'],$len,$h['size'],strlen($name),0).$name.$bytes;
