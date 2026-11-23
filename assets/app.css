@@ -65,3 +65,6 @@ html.dark :is(.dialog-message.error-message,.warning-count.has-errors,.template-
 
 #formula-unlock svg[hidden]{display:none}
 :is(#formula-unlock,#formula-history)[data-tooltip]::after{width:max-content;max-width:min(200px,calc(100vw - 110px));white-space:normal}
+
+#sheet .cell:focus{outline:2px solid #14764d;outline-offset:-2px;z-index:3}
+html.dark #sheet .cell:focus{outline-color:var(--gs-selection)}

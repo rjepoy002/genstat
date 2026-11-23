@@ -271,34 +271,30 @@
   if(selected===input.closest('td'))select(selected);
   recalculate();
  }
- function adjacentGridInput(input,horizontal,direction){
-  const {row,column}=data.metadata[input.dataset.ref];
-  let next=null,distance=Infinity;
-  for(const candidate of table.querySelectorAll('td input[data-ref]')){
-   const position=data.metadata[candidate.dataset.ref];
-   const step=(horizontal?position.column-column:position.row-row)*direction;
-   const sameAxis=horizontal?position.row===row:position.column===column;
-   if(sameAxis&&step>0&&step<distance&&editableGridInput(candidate)&&candidate.getClientRects().length){
-    next=candidate;distance=step;
+ function handleGridKey(event,cell,commit,cancel){
+  handleWorksheetEditKey(event,{
+   cell,commit,cancel,
+   candidates:()=>table.querySelectorAll('td[data-ref]'),
+   coordinates:cell=>{
+    const {row,column}=data.metadata[cell.dataset.ref],end=data.metadata[cell.dataset.excelRangeEnd];
+    return {row,column,rowEnd:end?.row,columnEnd:end?.column};
+   },
+   leave:direction=>document.querySelector(direction<0?'#total-group-toggle':'#report-notes summary').focus(),
+   focus:cell=>{
+    const input=cell.querySelector('input');
+    if(input&&editableGridInput(input)){input.focus();return;}
+    if(!cell.hasAttribute('tabindex'))cell.tabIndex=-1;
+    cell.focus();
+    openFormulaEditor(cell);
    }
-  }
-  return next;
+  });
  }
  table.addEventListener('change',e=>commitGridInput(e.target));
  table.addEventListener('keydown',e=>{
-  const input=e.target;
-  if(e.defaultPrevented||e.isComposing||e.ctrlKey||e.altKey||e.metaKey||!editableGridInput(input))return;
-  if(e.key==='Escape'){
-   e.preventDefault();
-   input.value=inputValue(input.dataset.ref);
-   return;
-  }
-  if(e.key!=='Enter'&&e.key!=='Tab')return;
-  const horizontal=e.key==='Tab';
-  const next=adjacentGridInput(input,horizontal,e.shiftKey?-1:1);
-  if(!horizontal||next)e.preventDefault();
-  commitGridInput(input);
-  next?.focus();
+  const target=e.target,cell=target.closest('td[data-ref]');
+  if(!cell||(!target.matches('input[data-ref]')&&target!==cell))return;
+  const editing=editableGridInput(target);
+  handleGridKey(e,cell,()=>{if(editing)commitGridInput(target);},()=>{if(editing)target.value=inputValue(target.dataset.ref);});
  });
  function setWorksheetUnlocked(unlocked){
   worksheetUnlocked=unlocked;
@@ -319,7 +315,7 @@
  table.addEventListener('dblclick',e=>openFormulaEditor(e.target.closest('[data-original-formula-editable]')));
  table.addEventListener('keydown',e=>{
   const cell=e.target.closest('[data-original-formula-editable]');
-  if(e.target!==cell)return;
+  if(e.defaultPrevented||e.target!==cell)return;
   if(e.key==='F2'||e.key==='Enter'||(e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey)){
    if(openFormulaEditor(cell,e.key.length===1?e.key:undefined))e.preventDefault();
   }
@@ -346,26 +342,24 @@
   });
   return pending;
  }
- function commitFormulaBuffer(){
+ function commitBarEdit(){
   if(!editingRef)return;
-  const ref=editingRef;
-  const content=bar.value;
+  const ref=editingRef,content=bar.value;
   editingRef=null;
-  return commitFormula(ref,content);
+  const cell=table.querySelector('td[data-ref="'+ref+'"]');
+  if(!cell||!canEditCell(cell))return;
+  if(cell.hasAttribute('data-original-formula-editable'))return commitFormula(ref,content);
+  const input=cell.querySelector('input');
+  if(input){input.value=content;commitGridInput(input);}
  }
  bar.addEventListener('input',()=>{
-  if(selected?.hasAttribute('data-original-formula-editable')&&canEditCell(selected))editingRef=selected.dataset.ref;
+  if(selected&&canEditCell(selected))editingRef=selected.dataset.ref;
  });
- bar.addEventListener('blur',commitFormulaBuffer);
- bar.addEventListener('keydown',async e=>{
-  if(e.key==='Escape'&&selected){editingRef=null;select(selected);return;}
-  if(e.key!=='Enter'||bar.readOnly||!selected)return;
-  e.preventDefault();
-  if(selected.hasAttribute('data-original-formula-editable')){editingRef=null;await commitFormula(selected.dataset.ref,bar.value);return;}
-  const ref=selected.dataset.ref;
-  setManualValue(ref,bar.value);select(selected);
-  selected.querySelector('input').value=bar.value;
-  await recalculate();
+ bar.addEventListener('blur',commitBarEdit);
+ bar.addEventListener('keydown',e=>{
+  if(bar.readOnly||!selected)return;
+  const cell=selected;
+  handleGridKey(e,cell,commitBarEdit,()=>{editingRef=null;select(cell);});
  });
  unlock.addEventListener('click',async()=>{
   if(changingLock||loading||saving||exporting)return;

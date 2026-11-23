@@ -31,6 +31,14 @@ try {
  if($action==='synchronize'){require_once __DIR__.'/tools/build-layout.php';require_once __DIR__.'/lib/sync-mapping.php';$result=synchronize_draft($p);}
  elseif($action==='unlock'){$result=confirm_formula_cell(is_string($body['cell']??null)?$body['cell']:'',($body['history']??false)===true);}
  elseif($action==='lock'){unset($_SESSION['formulaCells']);$result=formula_auth_status();}
+ elseif($action==='calculate'){
+  if(!is_array($body['values']??null)||!is_int($body['revision']??null)||!is_array($body['formulas']??null))throw new InvalidArgumentException('Invalid calculation request.');
+  $draft=read_draft($p);
+  if($draft['revision']!==$body['revision'])throw new DomainException('Another window saved this draft. Reopen the report.');
+  $values=validate_values($body['values']);
+  $formulas=validate_formula_overlays($body['formulas'],$values,(array)($draft['formulas']??[]),true);
+  $result=['calculation'=>calculate_draft(['values'=>$values,'formulas'=>$formulas])];
+ }
  elseif($action==='save'){
   if(!is_array($body['values']??null)||!is_int($body['revision']??null)||(isset($body['formulas'])&&!is_array($body['formulas'])))throw new InvalidArgumentException('Invalid draft request.');
   $result=formula_api_payload(save_draft($p,$body['values'],$body['revision'],$body['formulas']??null));

@@ -50,12 +50,22 @@ try{
  assert(fs.readFileSync(draft).equals(seedDraft));
  async function unlock(){await formula.dblclick();await page.locator('#formula-unlock-form button[type="submit"]').click();await page.waitForFunction(()=>!document.querySelector('#formula-text').readOnly);}
  await unlock();assert.equal(await editor.inputValue(),original);await editor.fill('=B11+2');await editor.press('Escape');assert(await editor.evaluate(e=>e.readOnly));assert.equal(await formula.evaluate(e=>e.classList.contains('pending-change')),false);
- await unlock();await editor.fill('=B11+2');await editor.press('Enter');assert(await editor.evaluate(e=>e.readOnly));assert(await formula.evaluate(e=>e.classList.contains('pending-change')));assert(fs.readFileSync(draft).equals(seedDraft));
+ await unlock();await editor.fill('=B11+2');await editor.press('Enter');
+ const nextCell=await page.evaluate(()=>document.activeElement.dataset.ref);
+ assert.equal(nextCell,'Q12');
+ assert(await editor.evaluate(e=>e.readOnly));
+ assert(await dialog.isHidden());
+ await page.keyboard.press('Shift+Enter');
+ assert.equal(await page.evaluate(()=>document.activeElement.dataset.ref),'Q11');
+ assert(await dialog.isHidden());
+ await formula.focus();assert(await editor.evaluate(e=>e.readOnly));assert(await formula.evaluate(e=>e.classList.contains('pending-change')));assert(fs.readFileSync(draft).equals(seedDraft));
  const forged=await page.evaluate(async revision=>{const r=await fetch('api.php?action=save&period=2026-06&sheet=Jun26',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':document.querySelector('meta[name="csrf-token"]').content,'X-Template-Hash':document.querySelector('meta[name="template-hash"]').content,'X-Layout-Hash':document.querySelector('meta[name="layout-hash"]').content},body:JSON.stringify({values:{},formulas:{Q12:'=1'},revision})});return r.status;},JSON.parse(fs.readFileSync(draft)).revision);assert.equal(forged,403);assert(fs.readFileSync(draft).equals(seedDraft));
  console.log('PASS: server rejects a formula change to an unconfirmed second cell');
  await page.locator('.cell[data-ref="Q12"]').click();assert(await editor.evaluate(e=>e.readOnly));await page.locator('#formula-undo').click();assert(await dialog.evaluate(e=>e.open));await page.locator('#formula-unlock-form button[type="submit"]').click();await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Undo saved'),{},{timeout:60000});assert.equal(await formula.evaluate(e=>e.classList.contains('pending-change')),false);
  console.log('PASS: unlock is cell-specific, Escape cancels buffer, Enter marks a pending change and relocks, Undo cancels before save');
  await unlock();await editor.fill('=ROUND(37/3,2)');await editor.press('Enter');
+ await page.waitForFunction(()=>document.querySelector('.cell[data-ref="Q11"]').dataset.rawValue==='12.33');
+ assert.equal(JSON.parse(fs.readFileSync(draft)).formulas.Q11,undefined,'Calculation preview preserves explicit formula Save Draft');
  const beforeSave=fs.readFileSync(active);await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Draft saved'),{},{timeout:60000});assert.equal(JSON.parse(fs.readFileSync(draft)).formulas.Q11,'=ROUND(37/3,2)');assert(fs.readFileSync(active).equals(beforeSave));
  const auditDialog=page.locator('#formula-history-dialog');
  const historyTooltip='Formula Edit History — View recorded formula changes.';
@@ -91,6 +101,21 @@ try{
  await page.locator('input[data-ref="AG97"]').fill('=SUM(1,2)');await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Draft saved'),{},{timeout:60000});await ready();const draftFormulaInput=page.locator('input[data-ref="AG97"]');assert(await draftFormulaInput.evaluate(e=>e.readOnly));await draftFormulaInput.dblclick();assert(await dialog.evaluate(e=>e.open));await page.locator('#formula-unlock-cancel').click();
  console.log('PASS: newly created draft formulas are protected after saving and reloading, before Excel synchronization');
  await ready(base+'?sheet=Jan26');assert(await page.locator('input[data-ref="AG99"]').isEnabled());await page.locator('input[data-ref="AG99"]').fill('January draft');await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Draft saved'),{},{timeout:60000});await ready(base+'?sheet=Jan26');assert.equal(await page.locator('input[data-ref="AG99"]').inputValue(),'January draft');assert.equal(JSON.parse(fs.readFileSync(draft)).values.AG99,'notes & <text>');
+ const january=ref=>page.locator('input[data-ref="'+ref+'"]');
+ const activeRef=()=>page.evaluate(()=>document.activeElement.dataset.ref);
+ await january('AG98').fill('15.25');
+ await january('AG98').press('Enter');
+ assert.equal(await activeRef(),'AG99');
+ await january('AG99').fill('Cancel this');
+ await january('AG99').press('Escape');
+ assert.equal(await january('AG99').inputValue(),'January draft');
+ await january('AG99').press('Shift+Enter');
+ assert.equal(await activeRef(),'AG98');
+ assert.equal(await january('AG98').inputValue(),'15.25');
+ await january('AG98').press('Shift+Tab');
+ assert.match(await activeRef(),/^AF98$/);
+ await january('AF98').press('Tab');
+ assert.equal(await activeRef(),'AG98');
  console.log('PASS: monthly sheets edit and reload independent drafts without changing June entries');
  assert.deepEqual(errors,[]);assert(fs.readFileSync(path.join(root,'storage/draft-2026-06.json')).equals(liveDraft));assert(fs.readFileSync(path.join(root,'excel-files/active/genstat_2026.xlsx')).equals(liveWorkbook));console.log('PASS: no browser errors; production workbook and saved draft remain byte-for-byte intact');
 }finally{if(browser)await browser.close();server.kill();await new Promise(r=>server.once('exit',r));const resolved=path.resolve(fixture);assert(resolved.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(resolved).startsWith('genstat-editing-'));fs.rmSync(resolved,{recursive:true,force:true});}

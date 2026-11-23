@@ -12,7 +12,7 @@
  let calculationErrors=0,unlockedCell=null,unlockTarget=null,autosaveTimer=null;
  let savedFormulaOverrides={},draftValues={},pendingFormulaRefs=new Set();
  const editHistory=new window.GenstatEditHistory(50);
- let formulaAudit=[];
+ let formulaAudit=[],calculationVersion=0,barDirty=false,previewQueue=Promise.resolve();
  let historyConfirmation=null,resyncPreparing=false,unlockSubmitting=false,resyncGeneration=0;
  const protectedFormula=ref=>sourceFormulas[ref]??(typeof savedFormulaOverrides[ref]==='string'&&savedFormulaOverrides[ref].startsWith('=')?savedFormulaOverrides[ref]:null);
  const hasOverride=ref=>Object.prototype.hasOwnProperty.call(formulaOverrides,ref);
@@ -75,29 +75,76 @@
  function lock(on){busy=on;buttons.forEach(b=>b.disabled=on);inputs.forEach(i=>i.disabled=on||!ready);document.getElementById('formula-text').disabled=on;document.getElementById('formula-unlock').disabled=on;updatePending();}
  async function request(action,body){const response=await fetch(`api.php?action=${action}&period=${encodeURIComponent(period.value)}&sheet=${encodeURIComponent(sheetName)}`,body?{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf,...versionHeaders},body:JSON.stringify(body)}:{cache:'no-store',headers:versionHeaders});const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed.');return data;}
  async function open(){if(busy)return;if(dirty&&!confirm('Discard unsaved changes and reopen the saved draft?'))return;lock(true);try{const d=await request('open');loadedValues={...d.values};inputs.forEach(i=>{const entered=Object.prototype.hasOwnProperty.call(d.values,i.dataset.ref);loadInput(i,entered?d.values[i.dataset.ref]:i.dataset.original,entered);if(entered)i.parentElement.classList.add('manual-input');});adoptFormulaPayload(d);editHistory.clear();revision=d.revision;dirty=false;ready=true;updatePending();setStatus(d.savedAt?`Draft reopened \u00b7 saved ${new Date(d.savedAt).toLocaleString()}`:'Source workbook loaded \u00b7 no saved draft.');}catch(e){setStatus(e.message,true);}finally{lock(false);}}
- async function save(){if(!ready)return false;const v=values();const d=await request('save',{values:v,revision,formulas:formulaOverrides});loadedValues={...d.values};adoptFormulaPayload(d);revision=d.revision;dirty=false;unlockedCell=null;savedFormulaOverrides={...formulaOverrides};pendingFormulaRefs.clear();updatePending();setStatus(`Draft saved \u00b7 ${new Date(d.savedAt).toLocaleString()}`);return true;}
+ async function save(){if(!ready)return false;++calculationVersion;const v=values();const d=await request('save',{values:v,revision,formulas:formulaOverrides});loadedValues={...d.values};adoptFormulaPayload(d);revision=d.revision;dirty=false;unlockedCell=null;savedFormulaOverrides={...formulaOverrides};pendingFormulaRefs.clear();updatePending();setStatus(`Draft saved \u00b7 ${new Date(d.savedAt).toLocaleString()}`);return true;}
  document.getElementById('open').addEventListener('click',open);
  document.getElementById('save').addEventListener('click',async()=>{if(busy)return;lock(true);try{await save();}catch(e){setStatus(e.message,true);}finally{lock(false);}});
  document.getElementById('export').addEventListener('click',async()=>{if(busy||!ready)return;lock(true);try{if(dirty)await save();const response=await fetch(`api.php?action=export&period=${encodeURIComponent(period.value)}&sheet=${encodeURIComponent(sheetName)}`,{headers:versionHeaders});if(!response.ok){const d=await response.json();throw new Error(d.error||'Export failed.');}const url=URL.createObjectURL(await response.blob());const a=document.createElement('a');a.href=url;a.download=`PALECO-GenStat-${period.value}.xlsx`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);setStatus('Excel exported. Linked files may be needed for full recalculation.');}catch(e){setStatus(e.message,true);}finally{lock(false);}});
+ function refreshCalculation(){
+  const version=++calculationVersion;
+  previewQueue=previewQueue.then(async()=>{
+   if(version!==calculationVersion||busy)return;
+   const result=await request('calculate',{values:{...draftValues},formulas:{...formulaOverrides},revision});
+   if(version===calculationVersion&&!busy)renderDraftCalculation(result.calculation);
+  }).catch(error=>{if(version===calculationVersion&&!busy)setStatus(error.message,true);});
+ }
+ function commitInput(input){
+  const ref=input.dataset.ref,state=cellValues.get(input),text=input.value;
+  if(input.readOnly||input.disabled||text===state.editText)return;
+  const before=cellState(ref);
+  state.editText=text;
+  if(text.startsWith('=')){formulaOverrides[ref]=text;delete draftValues[ref];}
+  else{delete formulaOverrides[ref];draftValues[ref]=text;state.raw=text;}
+  input.removeAttribute('aria-invalid');recordEdit(ref,before);dirty=true;preview(input);
+  setStatus('Unsaved changes');input.parentElement.classList.add('manual-input');
+  if(currentCell===input.parentElement)refreshFormulaBar();
+  refreshCalculation();scheduleAutosave();
+ }
+ function handleGridKey(event,cell,commit,cancel){
+  handleWorksheetEditKey(event,{
+   cell,commit,cancel,
+   candidates:()=>document.querySelectorAll('#sheet .cell[data-ref]'),
+   coordinates:target=>{
+    const row=Number(target.getAttribute('aria-rowindex')),column=Number(target.getAttribute('aria-colindex'));
+    return {row,column,rowEnd:row+(Number(target.getAttribute('aria-rowspan'))||1)-1,columnEnd:column+(Number(target.getAttribute('aria-colspan'))||1)-1};
+   },
+   leave:direction=>document.querySelector(direction<0?'#formula-unlock':'.worksheet-tab[aria-current=page]')?.focus(),
+   focus:target=>{
+    const input=target.querySelector('input');
+    if(input&&!input.disabled&&!input.readOnly){input.focus();return;}
+    if(!target.hasAttribute('tabindex'))target.tabIndex=-1;
+    target.focus();
+   }
+  });
+ }
  for(const input of inputs){
   loadInput(input,input.dataset.original,false);
   input.addEventListener('dblclick',()=>{if(protectedFormula(input.dataset.ref))beginUnlock(input.parentElement);});
-  input.addEventListener('focus',()=>{input.value=formulaOverrides[input.dataset.ref]||cellValues.get(input).editText;});
+  input.addEventListener('focus',()=>{input.value=formulaOverrides[input.dataset.ref]??cellValues.get(input).editText;});
+  input.addEventListener('change',()=>commitInput(input));
   input.addEventListener('blur',()=>preview(input));
-  input.addEventListener('input',()=>{const before=cellState(input.dataset.ref),state=cellValues.get(input);state.editText=input.value;const text=input.value,ref=input.dataset.ref;if(text.startsWith('=')){formulaOverrides[ref]=text;delete draftValues[ref];input.removeAttribute('aria-invalid');}else{delete formulaOverrides[ref];draftValues[ref]=text;state.raw=text;input.removeAttribute('aria-invalid');}recordEdit(ref,before);dirty=true;preview(input);setStatus('Unsaved changes \u00b7 Save Draft to recalculate.');input.parentElement.classList.add('manual-input');if(currentCell?.dataset.ref===ref)refreshFormulaBar();scheduleAutosave();});
-  input.addEventListener('keydown',e=>{if(protectedFormula(input.dataset.ref)&&!canEditFormula(input.parentElement)&&(['F2','Enter','Backspace','Delete'].includes(e.key)||(e.key.length===1&&!e.ctrlKey&&!e.metaKey))){e.preventDefault();beginUnlock(input.parentElement);return;}if(e.key==='Enter'){e.preventDefault();const next=inputs[inputs.indexOf(input)+(e.shiftKey?-1:1)];if(next)next.focus();}});
+  input.addEventListener('input',()=>{setStatus('Editing cell…');scheduleAutosave();});
  }
+ document.getElementById('sheet').addEventListener('keydown',e=>{
+  const target=e.target,cell=target.closest('.cell[data-ref]');
+  if(!cell||(!target.matches('input[data-ref]')&&target!==cell))return;
+  const editing=cellValues.has(target)&&!target.disabled&&!target.readOnly;
+  handleGridKey(e,cell,()=>{if(editing)commitInput(target);},()=>{
+   if(!editing)return;
+   target.value=cellValues.get(target).editText;
+   setStatus(dirty?'Unsaved changes':'Edit canceled');
+  });
+ });
  let selectedCell=null;
  function cellInfo(cell){const info=document.getElementById('cell-info');info.textContent=cell.dataset.ref;info.title=sheetName+' \u00b7 '+cell.dataset.ref+(cell.classList.contains('formula')?(canEditFormula(cell)?' \u00b7 Authorized formula-bar editing':' \u00b7 \u{1F512} Read-only formula'):cell.classList.contains('editable')?' \u00b7 Numeric input':' \u00b7 Protected');}
  function updateFormulaIndicators(){for(const cell of document.querySelectorAll('.cell.formula')){cell.title=cell.dataset.baseTitle+' \u00b7 '+(canEditFormula(cell)?'Authorized formula-bar editing - ':'\u{1F512} Read-only ')+cell.dataset.formulaKind+' formula'+(cell.dataset.formulaText?' ='+cell.dataset.formulaText:'');}if(selectedCell)cellInfo(selectedCell);}
  document.querySelectorAll('.cell').forEach(cell=>{
-  const select=()=>{if(selectedCell&&selectedCell!==cell){if(unlockedCell)finishFormulaEdit();selectedCell.classList.remove('formula-selected');unlockedCell=null;}selectedCell=cell;if(cell.classList.contains('formula'))cell.classList.add('formula-selected');cellInfo(cell);currentCell=cell;refreshFormulaBar();};
+  const select=()=>{if(selectedCell&&selectedCell!==cell){if(unlockedCell||barDirty)finishFormulaEdit();selectedCell.classList.remove('formula-selected');unlockedCell=null;}selectedCell=cell;if(cell.classList.contains('formula'))cell.classList.add('formula-selected');cellInfo(cell);currentCell=cell;refreshFormulaBar();};
   cell.addEventListener('pointerdown',select);cell.addEventListener('focusin',select);
  });
  for(const cell of document.querySelectorAll('.cell.formula')){
   for(const event of ['beforeinput','paste','drop'])cell.addEventListener(event,e=>{e.preventDefault();beginUnlock(cell);});
   cell.addEventListener('dblclick',()=>beginUnlock(cell));
-  cell.addEventListener('keydown',e=>{if(['Backspace','Delete','F2','Enter'].includes(e.key)||(e.key.length===1&&!e.ctrlKey&&!e.metaKey)||((e.ctrlKey||e.metaKey)&&['v','x'].includes(e.key.toLowerCase()))){e.preventDefault();beginUnlock(cell);}});
+  cell.addEventListener('keydown',e=>{if(['Backspace','Delete','F2'].includes(e.key)||(e.key.length===1&&!e.ctrlKey&&!e.metaKey)||((e.ctrlKey||e.metaKey)&&['v','x'].includes(e.key.toLowerCase()))){e.preventDefault();beginUnlock(cell);}});
  }
  const formulaText=document.getElementById('formula-text'),unlockButton=document.getElementById('formula-unlock'),mode=document.getElementById('formula-mode');
  function canEditFormula(cell){return Boolean(unlockedCell===cell.dataset.ref&&protectedFormula(cell.dataset.ref)&&['ordinary','shared'].includes(cell.dataset.formulaKind));}
@@ -126,19 +173,43 @@
   mode.textContent=unlockedCell?'Editing '+unlockedCell:'Formula cells protected';
   document.body.classList.toggle('formula-editing-active',Boolean(unlockedCell));
  }
- function scheduleAutosave(){clearTimeout(autosaveTimer);autosaveTimer=setTimeout(async()=>{if(!ready||!dirty||unlockedCell||pendingFormulaRefs.size||resyncPreparing||document.querySelector('dialog[open]'))return;if(busy){scheduleAutosave();return;}lock(true);try{await save();}catch(e){setStatus(e.message,true);}finally{lock(false);}},1200);}
+ function scheduleAutosave(){
+  clearTimeout(autosaveTimer);
+  autosaveTimer=setTimeout(async()=>{
+   if(!ready||unlockedCell||pendingFormulaRefs.size||resyncPreparing||document.querySelector('dialog[open]'))return;
+   if(busy){scheduleAutosave();return;}
+   const active=document.activeElement,gridInput=cellValues.has(active);
+   if(gridInput)commitInput(active);
+   if(!dirty)return;
+   clearTimeout(autosaveTimer);
+   lock(true);
+   try{await save();}
+   catch(e){setStatus(e.message,true);}
+   finally{
+    lock(false);
+    if(gridInput&&!active.readOnly&&document.activeElement===document.body&&!document.querySelector('dialog[open]')){
+     active.focus({preventScroll:true});
+    }
+   }
+  },1200);
+ }
  function adoptFormulaPayload(d){
+  ++calculationVersion;
   formulaAudit=Array.isArray(d.formulaAudit)?d.formulaAudit:[];
   const draftStamp=document.getElementById('draft-saved'),draftTime=document.getElementById('draft-saved-at');draftStamp.hidden=!d.savedAt;if(d.savedAt){draftTime.dateTime=d.savedAt;draftTime.textContent=new Date(d.savedAt).toLocaleString();}
   draftValues={...d.values};formulaOverrides={...d.formulas};sourceFormulas={...d.sourceFormulas};savedFormulaOverrides={...formulaOverrides};pendingFormulaRefs.clear();setAuthorization(d.authorization);
-  for(const [ref,result] of Object.entries(d.calculation?.cells||{})){
+  renderDraftCalculation(d.calculation);
+  for(const input of inputs){const ref=input.dataset.ref;input.readOnly=Boolean(protectedFormula(ref));input.parentElement.classList.toggle('formula',Boolean(protectedFormula(ref)));input.parentElement.dataset.formulaText=(protectedFormula(ref)||'').replace(/^=/,'');if(hasOverride(ref)){cellValues.get(input).editText=formulaOverrides[ref];input.value=formulaOverrides[ref];}preview(input);}
+  updateFormulaIndicators();refreshFormulaBar();updatePending();
+ }
+ function renderDraftCalculation(calculation){
+  for(const [ref,result] of Object.entries(calculation?.cells||{})){
    const cell=document.querySelector('.cell[data-ref="'+ref+'"]');if(!cell)continue;cell.dataset.resultDisplay=result.display;cell.dataset.rawValue=result.raw;cell.dataset.formulaText=(sourceFormulas[ref]||'').replace(/^=/,'');
    const content=cell.querySelector('.cell-content');if(content)content.textContent=result.display;
    cell.classList.toggle('calculation-error',Boolean(result.error));cell.classList.toggle('cached-result',result.cached);cell.dataset.calculationNote=result.cached?'External/unsupported source cache':result.error||'Calculated';
   }
-  for(const input of inputs){const ref=input.dataset.ref;input.readOnly=Boolean(protectedFormula(ref));input.parentElement.classList.toggle('formula',Boolean(protectedFormula(ref)));input.parentElement.dataset.formulaText=(protectedFormula(ref)||'').replace(/^=/,'');if(hasOverride(ref)){cellValues.get(input).editText=formulaOverrides[ref];input.value=formulaOverrides[ref];}preview(input);}
-  updateFormulaIndicators();refreshFormulaBar();updatePending();
-  const warnings=Object.entries(d.calculation?.warnings||{}),errors=Object.entries(d.calculation?.cells||{}).filter(([,r])=>r.error);calculationErrors=errors.length;
+  for(const input of inputs)preview(input);
+  const warnings=Object.entries(calculation?.warnings||{}),errors=Object.entries(calculation?.cells||{}).filter(([,r])=>r.error);calculationErrors=errors.length;
   const badge=document.getElementById('workbook-warning-count');badge.hidden=warnings.length===0&&errors.length===0;badge.textContent=[warnings.length?warnings.length+' warnings':'',errors.length?errors.length+' errors':''].filter(Boolean).join(' · ');badge.classList.toggle('has-errors',errors.length>0);
   document.getElementById('calculation-notice').textContent=errors.length?errors.length+' calculation error(s) need attention.':warnings.length?warnings.length+' formulas use external or unsupported source caches. Linked workbooks may be required.':'Supported formulas recalculated.';
   const list=document.getElementById('workbook-warning-list');list.replaceChildren();
@@ -147,17 +218,20 @@
  function finishFormulaEdit(cancel=false){
   if(!currentCell)return;
   const ref=currentCell.dataset.ref,input=currentCell.querySelector('input');
+  barDirty=false;
   if(protectedFormula(ref)&&canEditFormula(currentCell)){
-   if(!cancel){const text=formulaText.value,previous=hasOverride(ref)?formulaOverrides[ref]:sourceFormulas[ref];if(text!==previous){const before=cellState(ref);if(text===sourceFormulas[ref])delete formulaOverrides[ref];else formulaOverrides[ref]=text;delete draftValues[ref];recordEdit(ref,before);pendingFormulaRefs.add(ref);dirty=true;currentCell.classList.add('pending-change');setStatus('Pending change in '+ref+'. Save Draft to validate; Undo cancels it.');}}
+   if(!cancel){const text=formulaText.value,previous=hasOverride(ref)?formulaOverrides[ref]:sourceFormulas[ref];if(text!==previous){const before=cellState(ref);if(text===sourceFormulas[ref])delete formulaOverrides[ref];else formulaOverrides[ref]=text;delete draftValues[ref];recordEdit(ref,before);pendingFormulaRefs.add(ref);dirty=true;currentCell.classList.add('pending-change');setStatus('Pending change in '+ref+'. Save Draft to persist; Undo cancels it.');refreshCalculation();}}
    unlockedCell=null;
-  }else if(input&&!cancel){input.value=formulaText.value;input.dispatchEvent(new Event('input',{bubbles:true}));}
+  }else if(input&&!cancel){input.value=formulaText.value;commitInput(input);}
   updatePending();refreshFormulaBar();updateFormulaIndicators();
  }
+ formulaText.addEventListener('input',()=>{barDirty=true;});
  formulaText.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){e.preventDefault();finishFormulaEdit(true);currentCell?.focus();return;}
-  if(e.key==='Enter'&&!formulaText.readOnly){e.preventDefault();finishFormulaEdit();currentCell?.focus();}
+  if(formulaText.readOnly||!currentCell)return;
+  const cell=currentCell;
+  handleGridKey(e,cell,()=>finishFormulaEdit(),()=>{finishFormulaEdit(true);(cell.querySelector('input')??cell).focus();});
  });
- formulaText.addEventListener('blur',e=>{if(unlockedCell&&e.relatedTarget!==unlockButton)finishFormulaEdit();});
+ formulaText.addEventListener('blur',e=>{if((unlockedCell||barDirty)&&e.relatedTarget!==unlockButton)finishFormulaEdit();});
  unlockButton.addEventListener('blur',e=>{if(unlockedCell&&e.relatedTarget!==formulaText)finishFormulaEdit();});
  formulaText.addEventListener('pointerdown',()=>{if(formulaText.readOnly&&currentCell&&protectedFormula(currentCell.dataset.ref))beginUnlock(currentCell);});
  const unlockDialog=document.getElementById('formula-unlock-dialog'),authError=document.getElementById('formula-auth-error');
@@ -252,7 +326,10 @@
  window.addEventListener('pagehide',()=>{zoomViewport.removeEventListener('wheel',onWorksheetWheel);zoomViewport.removeEventListener('scroll',queueHeaderSync);if(headerFrame)cancelAnimationFrame(headerFrame);headerFrame=0;if(zoomFrame){cancelAnimationFrame(zoomFrame);flushWheelZoom();}});
  window.addEventListener('pageshow',e=>{if(e.persisted)attachWorksheetWheel();});
  try{const saved=Number(sessionStorage.getItem(zoomStorageKey));if(Number.isFinite(saved)&&saved>=50&&saved<=200)applyWorksheetZoom(saved);}catch(e){}
- window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+ window.addEventListener('beforeunload',e=>{
+  const active=document.activeElement,buffer=cellValues.get(active);
+  if(dirty||barDirty||(buffer&&buffer.editText!==active.value)){e.preventDefault();e.returnValue='';}
+ });
  const updateNotice=document.querySelector('.notification-strip'),updateText=document.getElementById('sync-status'),syncMeta=document.getElementById('sync-timestamp'),reload=document.getElementById('sync-reload'),syncNow=document.getElementById('sync-now');
  const resyncDialog=document.getElementById('resync-dialog'),resyncError=document.getElementById('resync-error'),resyncConfirm=document.getElementById('resync-confirm');
  let resyncToken=null;
