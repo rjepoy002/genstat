@@ -7,7 +7,7 @@ const {chromium}=require(process.env.TEMP+'\\genstat-browser\\node_modules\\play
   await page.goto(process.env.GENSTAT_TEST_COMPACT_URL||'http://localhost/genstat/');const original=await page.locator('[data-ref="F18"] .value').textContent();
   await page.locator('#sql-settings-open').click();await page.waitForFunction(()=>document.querySelector('#sql-bindings select'));
   assert.equal(await page.locator('#sql-bindings select[data-ref="F11"]').inputValue(),'12');
-  await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18');
+  await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18',{force:true});
   assert.equal(await page.locator('#sql-bindings select').count(),15);assert.equal(await page.locator('#sql-bindings select[data-ref="F18"]').inputValue(),'12');await page.locator('#sql-sacode-column').fill('');await page.locator('#sql-formula-enabled').uncheck();
   const ids=[1,8,9,10,12,2,5,15,4,3,6,19,16,18,11];for(const select of await page.locator('#sql-bindings select').all()){const ref=await select.getAttribute('data-ref');await select.selectOption(String(ids[ref.charCodeAt(0)-66]));}
   await page.locator('#sql-value-column').fill('TotalKWhSold');await page.locator('#sql-excluded').fill('');

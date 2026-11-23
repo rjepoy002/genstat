@@ -3,7 +3,103 @@
  const $=id=>document.getElementById(id),dialog=$('sql-settings-dialog'),report=window.genstatReport;
  let meta=null,current=null,dirty=false,busy=false,testGrant=null,history=[],testedResult=null,testTimer=null,testedSql=null,validationIssues=[],recoveryOperation=null;
  function message(text,error=false){$('sql-message').textContent=text;$('sql-message').dataset.error=String(error);}
- function configurationStatus(){const record=meta?.records[current?.key];return record?(Number(record.enabled)?'Configured':'Disabled'):'Not Configured';}
+ const rowSelect=$('sql-row'),rowTrigger=$('sql-row-trigger'),rowValue=$('sql-row-value'),rowOptions=$('sql-row-options');
+ let activeOption=-1;
+ const configuredColor='font-medium text-emerald-600 dark:text-emerald-400';
+ const defaultColor='font-normal text-slate-700 dark:text-slate-300';
+ function configurationStatus(key=current?.key){
+  const record=meta?.records[key];
+  return record?(Number(record.enabled)?'Configured':'Disabled'):'Not Configured';
+ }
+ function renderRowPicker(){
+  const rows=meta?.rows??[];
+  rowOptions.replaceChildren(...rows.map((row,index)=>{
+   const status=configurationStatus(row.key);
+   const option=document.createElement('div');
+   option.id='sql-row-option-'+index;
+   option.dataset.index=index;
+   option.setAttribute('role','option');
+   option.setAttribute('aria-selected',String(row.key===rowSelect.value));
+   option.className='cursor-pointer rounded-md px-2 py-2 hover:bg-slate-100 aria-selected:bg-slate-100 data-[active]:bg-slate-200 dark:hover:bg-[var(--gs-hover,#334155)] dark:aria-selected:bg-[var(--gs-header,#334155)] dark:data-[active]:bg-[var(--gs-hover,#475569)] '+(status==='Configured'?configuredColor:defaultColor);
+   option.textContent=row.label+' / '+status;
+   return option;
+  }));
+  const index=rowSelect.selectedIndex;
+  const picked=rowOptions.children[index];
+  rowValue.textContent=picked?.textContent??'Choose a report row';
+  rowValue.className='min-w-0 whitespace-normal '+(configurationStatus()==='Configured'?configuredColor:defaultColor);
+  rowTrigger.disabled=!rows.length;
+ }
+ function positionRowOptions(){
+  if(rowOptions.hidden)return;
+  const anchor=rowTrigger.getBoundingClientRect(),modal=dialog.getBoundingClientRect();
+  if(anchor.bottom<=modal.top||anchor.top>=modal.bottom){closeRowPicker();return;}
+  const gap=4,below=innerHeight-anchor.bottom-gap*2,above=anchor.top-gap*2;
+  const openAbove=below<Math.min(192,rowOptions.scrollHeight)&&above>below;
+  rowOptions.style.width=anchor.width+'px';
+  rowOptions.style.left=anchor.left+'px';
+  rowOptions.style.maxHeight=Math.max(0,Math.min(258,openAbove?above:below))+'px';
+  rowOptions.style.top=(openAbove?anchor.top-gap-rowOptions.offsetHeight:anchor.bottom+gap)+'px';
+ }
+ function highlightRowOption(index){
+  rowOptions.children[activeOption]?.removeAttribute('data-active');
+  activeOption=Math.max(0,Math.min(index,rowOptions.children.length-1));
+  const option=rowOptions.children[activeOption];
+  option.setAttribute('data-active','');
+  rowTrigger.setAttribute('aria-activedescendant',option.id);
+  option.scrollIntoView({block:'nearest'});
+ }
+ function openRowPicker(index=rowSelect.selectedIndex){
+  if(busy||rowTrigger.disabled)return;
+  rowOptions.hidden=false;
+  rowOptions.showPopover?.();
+  rowTrigger.setAttribute('aria-expanded','true');
+  positionRowOptions();
+  if(!rowOptions.hidden)highlightRowOption(index);
+ }
+ function closeRowPicker(){
+  if(rowOptions.hidden)return;
+  rowOptions.hidePopover?.();
+  rowOptions.hidden=true;
+  rowOptions.children[activeOption]?.removeAttribute('data-active');
+  activeOption=-1;
+  rowTrigger.setAttribute('aria-expanded','false');
+  rowTrigger.removeAttribute('aria-activedescendant');
+ }
+ function chooseRowOption(index){
+  closeRowPicker();
+  rowTrigger.focus({preventScroll:true});
+  if(index===rowSelect.selectedIndex)return;
+  rowSelect.selectedIndex=index;
+  rowSelect.dispatchEvent(new Event('change',{bubbles:true}));
+ }
+ rowTrigger.addEventListener('click',()=>rowOptions.hidden?openRowPicker():closeRowPicker());
+ rowTrigger.addEventListener('keydown',event=>{
+  const {key}=event,open=!rowOptions.hidden;
+  if(key==='Tab'){closeRowPicker();return;}
+  if(key==='Escape'){
+   if(open){event.preventDefault();event.stopPropagation();closeRowPicker();}
+   return;
+  }
+  if(!['ArrowDown','ArrowUp','Home','End','Enter',' '].includes(key))return;
+  event.preventDefault();
+  const last=rowOptions.children.length-1;
+  if(!open){openRowPicker(key==='Home'?0:key==='End'?last:rowSelect.selectedIndex);return;}
+  if(key==='Enter'||key===' '){chooseRowOption(activeOption);return;}
+  highlightRowOption(key==='Home'?0:key==='End'?last:activeOption+(key==='ArrowDown'?1:-1));
+ });
+ rowOptions.addEventListener('mousedown',event=>{if(event.target.closest('[role="option"]'))event.preventDefault();});
+ rowOptions.addEventListener('click',event=>{
+  const option=event.target.closest('[role="option"]');
+  if(option)chooseRowOption(Number(option.dataset.index));
+ });
+ document.addEventListener('pointerdown',event=>{
+  if(!rowTrigger.contains(event.target)&&!rowOptions.contains(event.target))closeRowPicker();
+ });
+ rowTrigger.addEventListener('blur',event=>{if(!rowOptions.contains(event.relatedTarget))closeRowPicker();});
+ dialog.addEventListener('scroll',positionRowOptions,{passive:true});
+ window.addEventListener('resize',positionRowOptions);
+ dialog.addEventListener('close',closeRowPicker);
  function config(){const bindings={};for(const select of $('sql-bindings').querySelectorAll('select'))bindings[select.dataset.ref]={areaId:select.value,sacode:select.parentElement.querySelector('input').value.trim()};return {rowKey:$('sql-row').value,sql:$('sql-editor').value,areaColumn:$('sql-area-column').value,valueColumn:$('sql-value-column').value,sacodeColumn:$('sql-sacode-column').value,bindings,excluded:$('sql-excluded').value.split(',').map(x=>x.trim()).filter(Boolean),autoMatchColumn:$('sql-auto-column').value,matchingMethod:$('sql-match-method').value,mappingSources:Object.fromEntries(Array.from($('sql-bindings').querySelectorAll('select')).map(x=>[x.dataset.ref,x.dataset.source??'saved'])),formulaExpression:$('sql-calculation').value,formulaEnabled:$('sql-formula-enabled').checked};}
 
  function warnFixedMonth(){
@@ -25,7 +121,7 @@
   $('sql-apply-reason').dataset.ready=String(!$('sql-apply').disabled);
  }
  async function api(action,extra={}){const response=await fetch('query-settings-api.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...report.snapshot(),action,...extra})});let result;try{result=await response.json();}catch{throw Error('The server did not return a valid settings response.');}if(!response.ok||result.error)throw Error(result.error||'SQL settings request failed.');return result;}
- async function operation(fn){if(busy)return;busy=true;$('sql-fields').disabled=true;for(const id of ['sql-test','sql-history','sql-history-load','sql-disable-config','sql-recover','sql-settings-close','sql-preview-formula'])$(id).disabled=true;updateActions();dialog.setAttribute('aria-busy','true');try{await fn();}catch(e){message(e.message,true);}finally{busy=false;$('sql-fields').disabled=false;for(const id of ['sql-test','sql-history','sql-history-load','sql-recover'])$(id).disabled=!meta;$('sql-settings-close').disabled=false;$('sql-history-load').disabled=!history.length;$('sql-disable-config').disabled=!meta?.records[current?.key]||!Number(meta?.records[current?.key]?.enabled);dialog.removeAttribute('aria-busy');updateActions();}}
+ async function operation(fn){if(busy)return;closeRowPicker();busy=true;$('sql-fields').disabled=true;for(const id of ['sql-test','sql-history','sql-history-load','sql-disable-config','sql-recover','sql-settings-close','sql-preview-formula'])$(id).disabled=true;updateActions();dialog.setAttribute('aria-busy','true');try{await fn();}catch(e){message(e.message,true);}finally{busy=false;$('sql-fields').disabled=false;for(const id of ['sql-test','sql-history','sql-history-load','sql-recover'])$(id).disabled=!meta;$('sql-settings-close').disabled=false;$('sql-history-load').disabled=!history.length;$('sql-disable-config').disabled=!meta?.records[current?.key]||!Number(meta?.records[current?.key]?.enabled);dialog.removeAttribute('aria-busy');updateActions();}}
  function fillTable(container,columns,rows){container.replaceChildren();if(!rows.length){const empty=document.createElement('p');empty.className='sql-empty';empty.textContent='No applicable rows to display.';container.append(empty);return;}const table=document.createElement('table'),thead=document.createElement('thead'),tr=document.createElement('tr');for(const column of columns){const th=document.createElement('th');th.textContent=column;tr.append(th);}thead.append(tr);table.append(thead);const tbody=document.createElement('tbody');for(const row of rows){const tr=document.createElement('tr');for(const col of columns){const td=document.createElement('td');td.textContent=row[col]===null?'NULL':String(row[col]??'');const numeric=typeof row[col]==='number'||typeof row[col]==='string'&&/^[+-]?(?:\d[\d,]*)(?:\.\d+)?$/.test(row[col]);td.dataset.numeric=String(numeric);tr.append(td);}tbody.append(tr);}table.append(tbody);container.append(table);}
  function list(id,items){$(id).replaceChildren();for(const text of items){const li=document.createElement('li');li.textContent=text;$(id).append(li);}}
  function resetPreview(){$('sql-duration').textContent='';fillTable($('sql-preview'),[],[]);$('sql-preview').firstChild.textContent='Test your approved query to see its results. No workbook values will change.';$('sql-diagnostics').replaceChildren();$('sql-history-panel').hidden=true;$('sql-history').setAttribute('aria-expanded','false');}
@@ -51,11 +147,16 @@
   for(const [ref,cell] of Object.entries(current.protectedCells??{})){if(!cell.suggestedAreaId||current.cells[ref])continue;const area=meta.areas.find(a=>String(a.AreaID)===cell.suggestedAreaId);const note=document.createElement('div');note.className='rounded border border-slate-200 bg-slate-50 p-2 text-xs';note.dataset.protectedRef=ref;note.textContent=`${cell.label} · ${ref} → ${cell.suggestedAreaId} · ${area?.AreaName??''}. ${cell.reason}${cell.formula?' '+cell.formula:''}. Not a writable SQL target.`;$('sql-bindings').append(note);}
   const columnIndex=element=>{const ref=element.dataset.protectedRef??element.querySelector('select').dataset.ref;return ref.match(/^[A-Z]+/)[0].split('').reduce((n,c)=>n*26+c.charCodeAt(0)-64,0);};
   for(const element of Array.from($('sql-bindings').children).sort((a,b)=>columnIndex(a)-columnIndex(b)))$('sql-bindings').append(element);
-  $('sql-row-status').textContent=configurationStatus();const selectedOption=Array.from($('sql-row').options).find(o=>o.value===current.key);if(selectedOption)selectedOption.textContent=`${current.label} / ${configurationStatus()}`;$('sql-editor-state').textContent=override?'Historical settings loaded as unapplied changes. Test the SQL again.':'No unapplied changes.';resetPreview();invalidateTest();updateActions();dirty=Boolean(override);message(override?'Historical settings loaded. Test and Apply & Save to commit them.':'Select a report row, test its SQL, complete mappings, then Apply & Save.');
+  $('sql-row-status').textContent=configurationStatus();renderRowPicker();$('sql-editor-state').textContent=override?'Historical settings loaded as unapplied changes. Test the SQL again.':'No unapplied changes.';resetPreview();invalidateTest();updateActions();dirty=Boolean(override);message(override?'Historical settings loaded. Test and Apply & Save to commit them.':'Select a report row, test its SQL, complete mappings, then Apply & Save.');
  }
  function showRecovery(operation){recoveryOperation=operation;$('sql-recovery-panel').hidden=!operation;}
- async function loadMetadata(preferredKey=null){meta=await api('metadata');$('sql-context').textContent=`${meta.monthLabel} / :ReportMonth = ${meta.month} / read-only preview`;const select=$('sql-row');select.replaceChildren();for(const row of meta.rows){const option=document.createElement('option');option.value=row.key;option.textContent=`${row.label} / ${row.status}`;select.append(option);}showRecovery(meta.recoverableOperation);if(meta.rows.length)populateRow(meta.rows.some(r=>r.key===preferredKey)?preferredKey:meta.rows[0].key);else message('No eligible visible report input rows.');}
- $('sql-settings-open').addEventListener('click',()=>{if(dialog.open)return;invalidateTest();meta=null;dialog.showModal();operation(async()=>{await loadMetadata();if(!$('settings-reporting').hidden){$('sql-row').focus({preventScroll:true});dialog.scrollTop=0;}});});
+ async function loadMetadata(preferredKey=null){meta=await api('metadata');$('sql-context').textContent=`${meta.monthLabel} / :ReportMonth = ${meta.month} / read-only preview`;rowSelect.replaceChildren(...meta.rows.map(row=>new Option(row.label,row.key)));showRecovery(meta.recoverableOperation);if(meta.rows.length)populateRow(meta.rows.some(r=>r.key===preferredKey)?preferredKey:meta.rows[0].key);else{renderRowPicker();message('No eligible visible report input rows.');}}
+ $('sql-settings-open').addEventListener('click',async()=>{
+  if(dialog.open)return;
+  invalidateTest();meta=null;renderRowPicker();dialog.showModal();
+  await operation(()=>loadMetadata());
+  if(dialog.open&&!$('settings-reporting').hidden){rowTrigger.focus({preventScroll:true});dialog.scrollTop=0;}
+ });
  async function close(){if(busy)return;if(dirty&&!await report.confirmAction('Discard unsaved SQL configuration changes?'))return;dialog.close();dirty=false;$('sql-settings-open').focus();}
  $('sql-settings-close').addEventListener('click',close);dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
  $('sql-fields').addEventListener('input',e=>{if(!['sql-row','sql-history-select'].includes(e.target.id))changed();});$('sql-fields').addEventListener('change',e=>{if(!['sql-row','sql-history-select'].includes(e.target.id))changed();});
@@ -112,8 +213,7 @@
   if(current.key!==key)populateRow(key);
   dirty=false;invalidateTest();validationIssues=[];
   $('sql-row-status').textContent=configurationStatus();
-  const selectedOption=[...$('sql-row').options].find(option=>option.value===key);
-  if(selectedOption)selectedOption.textContent=current.label+' / '+configurationStatus();
+  renderRowPicker();
   $('sql-editor-state').textContent='Configuration saved. Applied values are pending Save Draft.';
   showRecovery({operation_id:result.operationId,template_row_key:key});
   message(result.message);

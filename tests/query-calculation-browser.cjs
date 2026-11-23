@@ -6,7 +6,7 @@ const assert=require('assert');
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  try{
   await page.goto(process.env.GENSTAT_TEST_COMPACT_URL||'http://localhost/genstat/');await page.locator('#sql-settings-open').click();await page.waitForFunction(()=>document.querySelector('#sql-row option'));
-  await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18');
+  await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18',{force:true});
   
   await page.locator('#sql-editor').fill('WITH params AS (SELECT :ReportMonth AS ReportMonth) SELECT AreaID, AreaName, 1200838.00 AS Sales_KWH, 455.00 AS KWH_Diff, 36.00 AS Total_Cancelled_KWH, 1201293.00 AS TotalKWhSold FROM area_master ORDER BY AreaID DESC');
   await page.locator('#sql-area-column').fill('AreaID');await page.locator('#sql-value-column').fill('TotalKWhSold');await page.locator('#sql-sacode-column').fill('');

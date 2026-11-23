@@ -9,7 +9,7 @@ const sql='WITH params AS (SELECT :ReportMonth AS ReportMonth) SELECT (SELECT Re
  const sourceBefore=checksum(),page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  try{
   await page.goto(process.env.GENSTAT_TEST_COMPACT_URL||'http://localhost/genstat/');const before=await page.evaluate(()=>window.genstatReport.snapshot());
-  await page.locator('#sql-settings-open').click();await page.waitForFunction(()=>document.querySelector('#sql-row option'));await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18');
+  await page.locator('#sql-settings-open').click();await page.waitForFunction(()=>document.querySelector('#sql-row option'));await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18',{force:true});
   await page.locator('#sql-editor').fill(sql);await page.locator('#sql-area-column').fill('AreaID');await page.locator('#sql-value-column').fill('TotalKWhSold');
   const response=page.waitForResponse(r=>r.url().endsWith('query-settings-api.php')&&JSON.parse(r.request().postData()).action==='inspect-result');await page.locator('#sql-test').click();const result=await response;assert.equal(result.status(),200);const data=await result.json();await page.waitForFunction(()=>!document.querySelector('#sql-settings-dialog').hasAttribute('aria-busy'));
   assert.equal(data.month,'202607');assert.equal(data.truncated,false);

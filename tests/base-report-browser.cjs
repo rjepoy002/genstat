@@ -2,6 +2,104 @@
 const {chromium}=require(process.env.TEMP+'\\genstat-browser\\node_modules\\playwright');
 const assert=require('assert');
 const fs=require('fs'),path=require('path');
+async function checkGridKeys(browser,url){
+ const grid=await browser.newPage({viewport:{width:1440,height:1000}});
+ try{
+  const calculations=[];
+  grid.on('request',request=>{
+   if(request.method()!=='POST'||!request.url().endsWith('/base-report.php'))return;
+   const body=request.postDataJSON();
+   if(body.action==='calculate')calculations.push(body.values);
+  });
+  await grid.goto(url);
+  await grid.locator('#total-group-toggle').click();
+  const input=ref=>grid.locator('input[data-ref="'+ref+'"]');
+  const value=ref=>grid.locator('td[data-ref="'+ref+'"] .value');
+  const stored=()=>grid.evaluate(()=>window.genstatReport.snapshot().values);
+  const settled=()=>grid.evaluate(()=>window.genstatReport.ready());
+  const active=()=>grid.evaluate(()=>document.activeElement.dataset.ref);
+  const numeric=text=>Number(text.replaceAll(',',''));
+  const initial=numeric(await value('Q24').textContent());
+  const prior=Number(await input('B24').inputValue());
+  await input('B24').fill('123.45');
+  await input('B24').press('Enter');
+  assert.equal(await active(),'B25');
+  assert.equal((await stored()).B24,'123.45');
+  await settled();
+  assert.equal(calculations.length,1,'Enter plus native change commits once');
+  assert.equal(numeric(await value('Q24').textContent()),Number((initial-prior+123.45).toFixed(2)));
+
+  const old=await input('B25').inputValue();
+  await input('B25').fill('999');
+  await input('B25').press('Escape');
+  assert.equal(await input('B25').inputValue(),old);
+  assert.equal(await active(),'B25');
+  await input('B25').press('Shift+Enter');
+  assert.equal(await active(),'B24');
+  assert.equal(calculations.length,1);
+  assert.equal((await stored()).B25,undefined);
+
+  await input('B24').fill('0');
+  await input('B24').press('Tab');
+  assert.equal(await active(),'C24');
+  await settled();
+  assert.equal((await stored()).B24,'0');
+  await input('C24').fill('-5.25');
+  await input('C24').press('Shift+Tab');
+  assert.equal(await active(),'B24');
+  await settled();
+  assert.equal((await stored()).C24,'-5.25');
+  await input('C24').fill('');
+  await input('B24').click();
+  await settled();
+  assert.equal((await stored()).C24,'');
+  assert.equal(calculations.length,4);
+
+  await input('B39').fill('10');
+  await input('B39').press('Enter');
+  await settled();
+  assert.equal(await active(),'B39');
+  assert.equal((await stored()).B39,'10');
+  await grid.locator('td[data-ref="Q24"]').press('Enter');
+  assert(await grid.locator('#formula').evaluate(el=>el.readOnly));
+  assert(await input('B18').evaluate(el=>el.readOnly));
+  await input('B18').press('Enter');
+  assert.equal(calculations.length,5,'Protected cells never submit edits');
+  assert.equal(grid.url(),url);
+
+  // Use a different period from the main draft regression.
+  const august=new URL(url);august.searchParams.set('month','202608');
+  await grid.goto(august.href);
+  let releaseSave,markSaveStarted;
+  const saveInFlight=new Promise(resolve=>{markSaveStarted=resolve;});
+  const delay=new Promise(resolve=>{releaseSave=resolve;});
+  const delayWrite=async route=>{
+   if(route.request().postDataJSON()?.action!=='save')return route.fallback();
+   markSaveStarted();
+   await delay;
+   await route.continue();
+  };
+  await grid.route('**/base-report.php',delayWrite);
+  await input('B24').fill('21');
+  await input('B24').press('Enter');
+  await settled();
+  await grid.locator('#save').click();
+  await saveInFlight;
+  try{
+   await input('B24').fill('22');
+   await input('B24').press('Enter');
+   assert.equal((await stored()).B24,'22');
+  }finally{releaseSave();}
+  await settled();
+  assert.equal(await value('B24').textContent(),'22.00');
+  assert.equal(await grid.locator('#status').textContent(),'Unsaved changes');
+  assert.equal(await grid.evaluate(()=>window.genstatReport.snapshot().revision),1);
+  await grid.unroute('**/base-report.php',delayWrite);
+  await grid.reload();
+  assert.equal((await stored()).B24,'21','The newer edit remains pending while the original draft was saved');
+  console.log('PASS: grid keyboard commits, directional focus, Escape, blur deduplication and protected cells');
+ }finally{await grid.close();}
+}
 (async()=>{
  const fixtureUrl=process.env.GENSTAT_TEST_COMPACT_URL;
  if(!fixtureUrl)throw Error('Run this save test through node tools/run-tests.cjs tests/base-report-browser.cjs.');
@@ -9,6 +107,7 @@ const fs=require('fs'),path=require('path');
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];let testDraft=null;
  page.on('pageerror',e=>errors.push(e.message));
  try{
+  await checkGridKeys(browser,fixtureUrl);
   await page.goto(fixtureUrl);
   const restore=page.locator('#restore-sql'),confirmation=page.locator('#report-confirmation');
   const restoreNotice=page.locator('#restore-notice'),undoRestore=page.locator('#undo-restore');
@@ -116,7 +215,11 @@ const fs=require('fs'),path=require('path');
    await page.emulateMedia({colorScheme:mode});
    await page.waitForFunction(mode=>document.documentElement.dataset.theme===mode,mode);
    await refCell('Q11').focus();
-   assert.match(await refCell('B11').evaluate(cell=>getComputedStyle(cell,'::before').boxShadow),/rgb\(37, 99, 235\)/);
+   const shadow=await refCell('B11').evaluate(cell=>getComputedStyle(cell,'::before').boxShadow);
+   if(mode==='dark'){
+    assert.match(shadow,/2px.*inset/);
+    assert.doesNotMatch(shadow,/rgb\(37, 99, 235\)/);
+   }else assert.match(shadow,/rgb\(37, 99, 235\)/);
    await page.locator('#report-period').click();
   }
   const largeRange=await page.evaluate(()=>{
@@ -232,7 +335,9 @@ const fs=require('fs'),path=require('path');
    await restore.click();
    assert(await confirmation.getByRole('heading',{name:'Restore Report Formulas?'}).isVisible());
    assert(await confirmation.getByText('Any unsaved manual changes to affected cells will be replaced.').isVisible());
-   assert.match(await confirmation.evaluate(el=>getComputedStyle(el,'::backdrop').backgroundColor),/^(?:rgba\(0, 0, 0, 0\.6\)|oklab\(0 0 0 \/ 0\.6\))$/);
+   const backdrop=await confirmation.evaluate(el=>getComputedStyle(el,'::backdrop').backgroundColor);
+   if(theme==='dark')assert.equal(backdrop,'rgba(8, 12, 18, 0.68)');
+   else assert.match(backdrop,/^(?:rgba\(0, 0, 0, 0\.6\)|oklab\(0 0 0 \/ 0\.6\))$/);
    const bounds=await confirmation.boundingBox();
    assert(Math.abs(bounds.x+bounds.width/2-720)<1&&Math.abs(bounds.y+bounds.height/2-500)<1);
    assert(await confirmation.getByRole('button',{name:'Cancel'}).evaluate(el=>el===document.activeElement));

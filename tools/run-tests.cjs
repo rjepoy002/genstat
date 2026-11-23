@@ -58,6 +58,10 @@ async function main(){
       if(compact.includes(file)){
         fixture=sandbox(file);
         prepareCompact(fixture);
+        if(file==='tests/base-report-compact.cjs'&&env.GENSTAT_THEME_SCREENSHOTS){
+          const annual='excel-files/active/genstat_2026.xlsx';
+          fs.copyFileSync(path.join(root,annual),path.join(fixture,annual));
+        }
         if(file==='tests/recovered-sales-browser.cjs'){
           for(const input of ['excel-files/active/genstat_2026.xlsx','tests/recovered-sales-export.php'])
             fs.copyFileSync(path.join(root,input),path.join(fixture,input));

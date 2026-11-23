@@ -1,10 +1,10 @@
 <dialog id="sql-settings-dialog" class="sql-modal rounded-2xl border-0 bg-slate-50 p-0 text-slate-800 dark:text-slate-50" aria-labelledby="sql-settings-title">
- <div class="sticky top-0 z-10 bg-white dark:bg-slate-800">
- <div class="sql-dialog-header flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-600 dark:bg-slate-800">
+ <div class="sticky top-0 z-10 bg-white dark:bg-gs-surface">
+ <div class="sql-dialog-header flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 dark:border-gs-border dark:bg-gs-surface">
   <div><p class="m-0 mb-1 text-xs font-semibold uppercase tracking-widest text-teal-700">GENSTAT</p><h2 id="sql-settings-title" class="m-0 text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">Settings</h2><p id="sql-context" class="m-0 mt-1 text-xs text-slate-500"></p></div>
   <button id="sql-settings-close" type="button" class="close-settings" aria-label="Close Settings" title="Close">&#10005;</button>
  </div>
- <nav class="flex flex-wrap gap-2 border-b border-slate-200 px-4 py-2 dark:border-slate-600" aria-label="Settings sections">
+ <nav class="flex flex-wrap gap-2 border-b border-slate-200 px-4 py-2 dark:border-gs-border" aria-label="Settings sections">
   <button id="settings-reporting-tab" type="button" aria-controls="settings-reporting" aria-pressed="true">Reporting Configuration</button>
   <button id="settings-appearance-tab" type="button" aria-controls="settings-appearance" aria-pressed="false">Appearance</button>
  </nav>
@@ -16,7 +16,15 @@
   <fieldset id="sql-fields" class="m-0 min-w-0 space-y-4 border-0 p-0">
    <section class="sql-card space-y-3" aria-label="Report configuration">
     <div class="flex flex-wrap items-center justify-between gap-2"><h3 class="sql-card-title">Report configuration</h3><span id="sql-row-status" class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">Not Configured</span></div>
-    <div class="flex flex-wrap items-end gap-3"><label class="settings-label min-w-0 flex-1">GENSTAT Report Row<select id="sql-row" class="settings-input" aria-label="GENSTAT report row"></select></label><button id="sql-history" type="button" aria-controls="sql-history-panel" aria-expanded="false">History</button></div>
+    <div class="flex flex-wrap items-end gap-3"><div class="min-w-0 flex-1">
+     <span id="sql-row-label" class="settings-label">GENSTAT Report Row</span>
+     <select id="sql-row" hidden aria-hidden="true" tabindex="-1"></select>
+     <button id="sql-row-trigger" type="button" role="combobox" aria-labelledby="sql-row-label" aria-controls="sql-row-options" aria-expanded="false" class="mt-1 flex min-h-9 w-full items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white text-left hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-teal-600 dark:border-[var(--gs-border,#475569)] dark:bg-[var(--gs-toolbar,#1e293b)] dark:hover:bg-[var(--gs-hover,#334155)]">
+      <span id="sql-row-value" class="min-w-0 whitespace-normal">Choose a report row</span>
+      <svg class="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+     </button>
+     <div id="sql-row-options" role="listbox" aria-labelledby="sql-row-label" popover="manual" hidden class="fixed inset-auto z-50 m-0 overflow-y-auto overscroll-contain rounded-lg border border-slate-300 bg-white p-1 text-xs shadow-lg dark:border-[var(--gs-border,#475569)] dark:bg-[var(--gs-surface,#1e293b)]"></div>
+    </div><button id="sql-history" type="button" aria-controls="sql-history-panel" aria-expanded="false">History</button></div>
     <p id="sql-editor-state" class="sql-help" role="status">No unapplied changes.</p><p id="sql-approved-note" class="sql-help" hidden>Approved row: Apply &amp; Save can replace Excel formulas in this approved row.</p>
     <div id="sql-history-panel" class="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3" hidden><label class="settings-label">Configuration versions<select id="sql-history-select" class="settings-input"></select></label><div class="flex flex-wrap gap-2"><button id="sql-history-load" type="button">Restore Configuration</button><button id="sql-disable-config" type="button">Disable configuration</button></div><p class="sql-help">Restoring loads unapplied settings only. Test and Apply &amp; Save to use them. Disabling keeps the SQL and history.</p></div>
    </section>

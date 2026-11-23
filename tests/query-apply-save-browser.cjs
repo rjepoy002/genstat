@@ -74,10 +74,28 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   });
   assert.equal(wrongMonth,400);
   await open();
+  const rowColor=()=>page.locator('#sql-row-value').evaluate(el=>getComputedStyle(el).color);
+  const expectRowColor=async(theme,status)=>{
+   await page.emulateMedia({colorScheme:theme});
+   await page.waitForFunction(mode=>document.documentElement.dataset.theme===mode,theme);
+   const swatch=await page.evaluate(status=>{
+    const sample=document.createElement('span');
+    sample.className=status==='Configured'?'text-emerald-600 dark:text-emerald-400':'text-slate-700 dark:text-slate-300';
+    document.body.append(sample);
+    const color=getComputedStyle(sample).color;sample.remove();return color;
+   },status);
+   assert.equal(await rowColor(),swatch);
+   const picker=page.locator('#sql-row-trigger');
+   await picker.click();
+   const option=page.locator('#sql-row-options [aria-selected="true"]');
+   assert.match(await option.textContent(),new RegExp(status+'$'));
+   assert.equal(await option.evaluate(el=>getComputedStyle(el).color),swatch);
+   await picker.press('Escape');
+  };
   assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');const sql=await page.locator('#sql-editor').inputValue();
   for(const id of ['sql-key','sql-enabled','sql-allow-formulas','sql-save-config'])assert.equal(await page.locator('#'+id).count(),0);assert.equal(await page.locator('#sql-apply').textContent(),'Apply & Save');assert(await page.locator('#sql-apply').isDisabled());assert((await page.locator('#sql-apply-reason').textContent()).includes('Test the SQL'));
   assert.equal(Number(stats().records[0].enabled),0);await page.locator('#sql-history').click();await idle();assert((await page.locator('#sql-history-select').textContent()).includes('v1'));assert((await page.locator('#sql-history-select').textContent()).includes('Disabled'));assert.equal(stats().genstat_query_history,0);
-  await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18');assert.equal(await page.locator('#sql-row-status').textContent(),'Not Configured');assert(await page.locator('#sql-approved-note').isVisible());assert.equal(await page.locator('#sql-bindings select[data-ref="F18"]').count(),1);await page.locator('#sql-editor').fill(sql);await page.locator('#sql-value-column').fill('TotalKWhSold');await test();assert.equal(await page.locator('#sql-preview tbody tr').count(),15);assert.equal(await page.locator('#sql-bindings select[data-ref="F18"]').inputValue(),'12');
+  await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18',{force:true});assert.equal(await page.locator('#sql-row-status').textContent(),'Not Configured');assert(await page.locator('#sql-approved-note').isVisible());assert.equal(await page.locator('#sql-bindings select[data-ref="F18"]').count(),1);await page.locator('#sql-editor').fill(sql);await page.locator('#sql-value-column').fill('TotalKWhSold');await test();assert.equal(await page.locator('#sql-preview tbody tr').count(),15);assert.equal(await page.locator('#sql-bindings select[data-ref="F18"]').inputValue(),'12');
   const ids=[1,8,9,10,12,2,5,15,4,3,6,19,16,18,11];for(const select of await page.locator('#sql-bindings select').all()){if(!(await select.inputValue())){const ref=await select.getAttribute('data-ref');await select.selectOption(String(ids[ref.charCodeAt(0)-66]));}}
   const c=page.locator('#sql-bindings select[data-ref="C18"]');await c.selectOption('9');await page.locator('#sql-auto-column').selectOption('AreaID');await idle();assert.equal(await c.inputValue(),'9');await page.locator('#sql-auto-column').selectOption('AreaName');await idle();await c.locator('..').getByRole('button',{name:'Reset to Auto'}).click();await idle();assert.equal(await c.inputValue(),'8');
   await page.locator('#sql-formula-enabled').check();await page.locator('#sql-calculation').fill('Sales_KWH + KWH_Diff + Total_Cancelled_KWH');await page.locator('#sql-preview-formula').click();await idle();assert.equal(await page.locator('#sql-preview tbody tr').first().locator('td').last().textContent(),'1201329');assert.equal(stats().genstat_row_query_mappings,1);assert.equal(stats().genstat_query_history,0);
@@ -120,9 +138,15 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await page.reload();await open();assert(await page.locator('#sql-recovery-panel').isVisible());await page.locator('#sql-recover').click();await page.locator('#report-confirmation').getByRole('button',{name:'Continue'}).click();await idle();assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');assert.equal(await page.locator('input[data-ref="B11"]').inputValue(),'24850653.84');assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A18');assert.equal(stats().genstat_query_apply_operations,1);
   const foreign=await browser.newContext(),foreignPage=await foreign.newPage();await foreignPage.goto(baseUrl+'/base-report.php?month=202607');const denied=await foreignPage.evaluate(async operationId=>{const r=await fetch('query-settings-api.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...window.genstatReport.snapshot(),action:'recover',operationId,confirmed:true})});return r.status;},committed.operationId);assert.equal(denied,400);await foreign.close();
   console.log('PASS: lost response after commit recovers the exact signed result and prior manual values; duplicate operation replays without duplicate history/signatures; other sessions cannot recover it. Save Draft remains pending.');
-  await page.locator('#sql-settings-close').click();await page.locator('input[data-ref="B18"]').evaluate(input=>{input.value='5';input.dispatchEvent(new Event('change',{bubbles:true}));});await page.evaluate(()=>window.genstatReport.ready());await open();await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18');await test();await apply();assert.equal(stats().genstat_query_history,1);assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).revision),1);assert.equal(stats().genstat_query_apply_operations,2);
+  await page.locator('#sql-settings-close').click();await page.locator('input[data-ref="B18"]').evaluate(input=>{input.value='5';input.dispatchEvent(new Event('change',{bubbles:true}));});await page.evaluate(()=>window.genstatReport.ready());await open();await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18',{force:true});await test();await apply();assert.equal(stats().genstat_query_history,1);assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).revision),1);assert.equal(stats().genstat_query_apply_operations,2);
   await page.locator('#sql-calculation').fill('TotalKWhSold');assert(await page.locator('#sql-apply').isDisabled());await test();await apply();assert.equal(stats().genstat_query_history,2);await page.locator('#sql-history').click();await idle();const options=await page.locator('#sql-history-select option').evaluateAll(options=>options.map(o=>({value:o.value,text:o.textContent})));const original=options.find(o=>o.text.startsWith('v1 '));assert(original);await page.locator('#sql-history-select').selectOption(original.value);await page.locator('#sql-history-load').click();assert.equal(await page.locator('#sql-calculation').inputValue(),'Sales_KWH + KWH_Diff + Total_Cancelled_KWH');assert((await page.locator('#sql-apply-reason').textContent()).includes('Test the SQL'));assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).revision),2);await test();await apply();assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).revision),3);assert.equal(stats().genstat_query_history,3);
-  const beforeDisable=await page.evaluate(()=>window.genstatReport.snapshot());await page.locator('#sql-history').click();await idle();await page.locator('#sql-disable-config').click();await page.locator('#report-confirmation').getByRole('button',{name:'Continue'}).click();await idle();assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');assert.deepEqual(await page.evaluate(()=>window.genstatReport.snapshot()),beforeDisable);assert.equal(stats().genstat_query_history,4);await page.locator('#sql-settings-close').click();await page.reload();await open();await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18');assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');await test();assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).enabled),0);await apply();assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).enabled),1);assert.equal(stats().genstat_query_history,5);
+  const beforeDisable=await page.evaluate(()=>window.genstatReport.snapshot());await page.locator('#sql-history').click();await idle();await page.locator('#sql-disable-config').click();await page.locator('#report-confirmation').getByRole('button',{name:'Continue'}).click();await idle();assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');assert.deepEqual(await page.evaluate(()=>window.genstatReport.snapshot()),beforeDisable);assert.equal(stats().genstat_query_history,4);await expectRowColor('light','Disabled');await page.locator('#sql-settings-close').click();await page.reload();await open();await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18',{force:true});assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');await test();assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).enabled),0);await apply();assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).enabled),1);assert.equal(stats().genstat_query_history,5);
+  await expectRowColor('light','Configured');
+  await expectRowColor('dark','Configured');
+  await page.locator('#sql-row').selectOption('genstat-base/Jul26/A25',{force:true});
+  await expectRowColor('dark','Not Configured');
+  await expectRowColor('light','Not Configured');
+  await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18',{force:true});
   await page.locator('#sql-settings-dialog').evaluate(e=>e.scrollTop=0);await page.screenshot({animations:'disabled',path:'tests/query-apply-save-desktop.png'});await page.setViewportSize({width:390,height:844});await page.locator('#sql-apply').scrollIntoViewIfNeeded();await page.screenshot({animations:'disabled',path:'tests/query-apply-save-mobile.png'});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.setViewportSize({width:1440,height:1000});
   console.log('PASS: identical configurations avoid redundant history; new versions and restore are preserved; restore requires testing; disable is confirmed and retains history/values; viewing/testing disabled settings never enables them, successful Apply & Save does.');
   await page.locator('#sql-settings-close').click();const draft=path.join(root,'storage',`base-report-${beforeSource}-202607.json`);assert(!fs.existsSync(draft));await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#status').textContent==='Draft saved');const saved=JSON.parse(fs.readFileSync(draft,'utf8'));assert.equal(saved.sqlReplacements.F18.value,'1201329');assert.equal(saved.values.G18,'1201329');await page.reload();assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');
@@ -162,7 +186,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await page.emulateMedia({colorScheme:'light'});
   assert.doesNotMatch(serverLog,/PHP (?:Warning|Fatal error|Parse error|Notice)/);
   const row18Before=stats().records.find(r=>r.template_row_key.endsWith('A18'));await open();assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A11');assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');assert(!(await page.locator('#sql-approved-note').isVisible()));await test();const ordinary=await apply();assert.equal(ordinary.sqlReplacements.F18.value,'1201329');assert.equal(await page.locator('td[data-ref="B11"]').getAttribute('data-sql-applied'),'true');assert.equal(stats().records.find(r=>r.template_row_key.endsWith('A11')).query_key,'legacy_existing');assert.deepEqual(stats().records.find(r=>r.template_row_key.endsWith('A18')),row18Before);assert.equal(JSON.parse(fs.readFileSync(draft,'utf8')).revision,2);assert.equal((await api('apply',submitted)).status,400);
-  await page.locator('#sql-editor').fill(sql+' ');await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18');await page.locator('#report-confirmation').getByRole('button',{name:'Cancel'}).click();await page.waitForFunction(()=>document.querySelector('#sql-row').value==='genstat-base/Jul26/A11');assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A11');assert.equal(checksum(),beforeSource);assert.deepEqual(productionDrafts(),beforeDrafts);assert.deepEqual(errors,[]);
+  await page.locator('#sql-editor').fill(sql+' ');await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18',{force:true});await page.locator('#report-confirmation').getByRole('button',{name:'Cancel'}).click();await page.waitForFunction(()=>document.querySelector('#sql-row').value==='genstat-base/Jul26/A11');assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A11');assert.equal(checksum(),beforeSource);assert.deepEqual(productionDrafts(),beforeDrafts);assert.deepEqual(errors,[]);
   console.log('PASS: Save Draft persists signed replacements across sessions; explicit Restore Template Formula persists; legacy identifiers and row independence retained; draft-version staleness and unsaved row-switch confirmation work; original workbook and production drafts unchanged.');
   const rebuildPage=await context.newPage();
   await rebuildPage.goto(baseUrl+'/base-report.php?month=202607');
@@ -396,7 +420,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await rowSelection.inputValue(),'genstat-base/Jul26/A11');
   assert(await page.locator('#sql-calculation-section').isVisible());
   assert.equal(await page.locator('#sql-formula-enabled').isChecked(),false);
-  await rowSelection.selectOption('genstat-base/Jul26/A25');
+  await rowSelection.selectOption('genstat-base/Jul26/A25',{force:true});
   assert.match(await page.locator('#sql-formula-row').textContent(),/Bill Adjustment/);
   assert.equal(await page.locator('#sql-calculation').inputValue(),'');
   await page.locator('#sql-editor').fill(sql);
@@ -422,12 +446,12 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await sqlLabel('B25'),'true');
   assert.equal(await sqlLabel('F18'),'true');
   assert.equal(await sqlLabel('Q25'),null);
-  await rowSelection.selectOption('genstat-base/Jul26/A18');
+  await rowSelection.selectOption('genstat-base/Jul26/A18',{force:true});
   assert.notEqual(await page.locator('#sql-calculation').inputValue(),'KWH_Diff * 2');
   assert.equal(await page.locator('#sql-preview tbody tr').count(),0);
   assert(await page.locator('#sql-apply').isDisabled());
   assert(await page.locator('#sql-preview-formula').isDisabled());
-  await rowSelection.selectOption('genstat-base/Jul26/A25');
+  await rowSelection.selectOption('genstat-base/Jul26/A25',{force:true});
   assert.equal(await page.locator('#sql-calculation').inputValue(),'KWH_Diff * 2');
   assert.equal(await page.locator('#sql-formula-enabled').isChecked(),true);
   assert.equal(await page.locator('#sql-value-column').inputValue(),'KWH_Diff');
@@ -437,7 +461,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await (await adjustmentExport).saveAs(path.join(root,'adjustment-export.xlsx'));
   process.stdout.write(fixture('adjustment-export'));
   await open();
-  await rowSelection.selectOption('genstat-base/Jul26/A25');
+  await rowSelection.selectOption('genstat-base/Jul26/A25',{force:true});
   await page.locator('#sql-calculation').fill('KWH_Diff - KWH_Diff');
   assert.equal((await test()).validationPassed,true);
   await apply();
@@ -466,7 +490,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await sqlLabel('B25'),null);
   assert.equal(await sqlLabel('C25'),'true');
   await open();
-  await rowSelection.selectOption('genstat-base/Jul26/A25');
+  await rowSelection.selectOption('genstat-base/Jul26/A25',{force:true});
   await page.locator('#sql-history').click();
   await idle();
   await page.locator('#sql-disable-config').click();

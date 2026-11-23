@@ -30,20 +30,35 @@
 .worksheet-header-layer{position:absolute;left:0;top:0;background:#f0f2f1;isolation:isolate;will-change:transform}#column-headings{z-index:20}#row-headings{z-index:21}#sheet-corner{left:0;top:0;z-index:22;will-change:transform}
 
 /* The annual editor shares the report theme while retaining workbook geometry. */
-html.dark{--navy:#173650;--navy-light:#273449;--text:#f8fafc;--muted:#cbd5e1;--border:#475569;--surface:#1e293b;--canvas:#0f172a;--danger:#fda4af}
-html.dark :is(.workspace-toolbar,.formula-bar,.worksheet-footer,.worksheet-tabs,.notes-panel,.zoom-panel,dialog){background:#1e293b;color:#f8fafc;border-color:#475569}
-html.dark :is(.notification-strip,.worksheet-tab,.sheet-tab,.access-badge,.template-update,.corner,.col-heading,.row-heading){background:#273449;color:#cbd5e1;border-color:#475569}
-html.dark :is(.notification-strip,.template-update) small,html.dark :is(.workspace-heading p,.warning-list code,dialog p,.footer-template){color:#cbd5e1}
-html.dark :is(.button-header,.button-outline,.icon-button,select,dialog input,.formula-bar input){background:#273449;color:#f8fafc;border-color:#475569}
-html.dark :is(.button-header,.button-outline,.icon-button):hover:not(:disabled){background:#334155;color:#fff}
-html.dark .cell:not([style*="background-color"]){background:#1e293b;color:#f8fafc}
-html.dark .cell[style*="#FFFFFF" i]{background:#1e293b!important;color:#f8fafc!important}
-html.dark .cell:is([style*="#00B0F0" i],[style*="#4BACC6" i]){background:#124458!important;color:#e0f7ff!important}
-html.dark .cell[style*="#ccc1da" i]{background:#43345a!important;color:#f4e9ff!important}
-html.dark .cell.manual-input{background:#5b4518!important;color:#fff3c4!important}
-html.dark .cell.calculation-error{color:#fda4af!important}
-html.dark :is(.dialog-message,.warning-count){background:#273449;color:#cbd5e1!important}
-html.dark :is(.dialog-message.error-message,.warning-count.has-errors,.template-update[data-state="error"],.template-update[data-state="conflict"]){background:#4c1d30;color:#fda4af!important;border-color:#be5779}
+html.dark{
+ --navy:var(--gs-toolbar);--navy-light:var(--gs-header);--text:var(--gs-text);
+ --muted:var(--gs-text-muted);--border:var(--gs-border);--surface:var(--gs-surface);
+ --canvas:var(--gs-bg);--danger:var(--gs-error);--amber:var(--gs-warning);
+ --green:var(--gs-sql-bg);--green-dark:var(--gs-sql-text)
+}
+html.dark :is(.workspace-toolbar,.formula-bar,.worksheet-footer,.worksheet-tabs,.notes-panel,.zoom-panel,dialog){
+ background:var(--gs-surface);color:var(--gs-text);border-color:var(--gs-border)
+}
+html.dark :is(.notification-strip,.worksheet-tab,.sheet-tab,.access-badge,.template-update,.corner,.col-heading,.row-heading,.worksheet-header-layer){
+ background:var(--gs-header);color:var(--gs-text-secondary);border-color:var(--gs-border)
+}
+html.dark :is(.notification-strip small,.template-update small,.workspace-heading p,.warning-list code,dialog p,.footer-template){color:var(--gs-text-secondary)}
+html.dark :is(.button-header,.button-outline,.icon-button,select,dialog input,.formula-bar input){
+ background:var(--gs-header);color:var(--gs-text);border-color:var(--gs-border)
+}
+html.dark :is(.button-header,.button-outline,.icon-button):hover:not(:disabled){background:var(--gs-hover);color:var(--gs-text)}
+html.dark :is(#viewport,#sheet,#sheet-size){background:var(--gs-surface);color:var(--gs-text);scrollbar-color:var(--gs-hover) var(--gs-bg)}
+html.dark .cell{background:var(--gs-surface)!important;color:var(--gs-text)!important;border-color:var(--gs-border)!important}
+html.dark .cell:is([style*="#00B0F0" i],[style*="#4BACC6" i]){background:var(--gs-sql-bg)!important}
+html.dark .cell[style*="#ccc1da" i]{background:var(--gs-loss-bg)!important}
+html.dark .cell.calculation-error{color:var(--gs-error)!important}
+html.dark :is(.cell.selected,button,select,input,summary):focus-visible{outline-color:var(--gs-selection)}
+html.dark .cell.selected{outline-color:var(--gs-selection)}
+html.dark [data-tooltip]::after{background:var(--gs-toolbar);color:var(--gs-text);border:1px solid var(--gs-border)}
+html.dark :is(.dialog-message,.warning-count){background:var(--gs-header);color:var(--gs-text-secondary)!important}
+html.dark :is(.dialog-message.error-message,.warning-count.has-errors,.template-update[data-state="error"],.template-update[data-state="conflict"]){
+ background:var(--gs-error-bg);color:var(--gs-error)!important;border-color:var(--gs-border)
+}
 
 [data-excel-headings="off"] :is(#column-headings,#row-headings,#sheet-corner){display:none}
 [data-excel-headings="off"] #sheet{left:calc(-36px * var(--worksheet-zoom,.7));top:calc(-24px * var(--worksheet-zoom,.7))}

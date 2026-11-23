@@ -62,21 +62,89 @@
 @source "../partials/report-appearance.php";
 
 #sql-settings-dialog nav button[aria-pressed="true"]{@apply border-blue-700 bg-blue-50 text-blue-800;}
-.dark #sql-settings-dialog.sql-modal{background:#0f172a;color:#f8fafc}
-.dark #sql-settings-dialog :is(.sql-card,.settings-preview,.settings-preview td,.settings-input,.sql-mapping-item,#sql-history-panel,#sql-message,#sql-row-status){background:#1e293b;border-color:#475569!important;color:#f8fafc}
-.dark #sql-settings-dialog :is(.sql-card-title,.settings-label){color:#f8fafc}
-.dark #sql-settings-dialog :is(.sql-help,.sql-empty,[class*="text-slate-"],#sql-column-tokens:empty::before){color:#cbd5e1}
-.dark #sql-settings-dialog :is(.settings-preview th,.settings-preview tr:hover td,#sql-editor,#sql-calculation,.sql-mapping-item>select,#sql-mapping-message){background:#273449!important;color:#f8fafc!important;border-color:#475569!important}
-.dark #sql-settings-dialog [class*="bg-slate-50"]:not(#settings-appearance *){background:#273449}
-.dark #sql-settings-dialog :is([class*="bg-teal-50"],#sql-column-tokens button){background:#134e4a;color:#ccfbf1;border-color:#5badaa}
-.dark #sql-settings-dialog :is(#sql-recovery-panel,#sql-month-warning){background:#483818;color:#fde68a;border-color:#a16207}
-.dark #sql-settings-dialog :is(.sql-diagnostics,#sql-message[data-error=true]){color:#fda4af}
-.dark #sql-settings-dialog #sql-message[data-error=true]{background:#4c1d30;border-color:#be5779!important}
-.dark #sql-settings-dialog :is([data-state="Auto-matched"],#sql-apply-reason[data-ready=true],.sql-mapping-item>button){color:#99f6e4}
-.dark #sql-settings-dialog :is([data-state="Unmatched"],[data-state="Ambiguous"]){color:#fde68a}
-.dark #sql-settings-dialog :is(button:disabled,button.sql-primary:disabled){background:#334155;color:#cbd5e1;border-color:#64748b}
-.dark #sql-settings-dialog [class*="text-teal-"]{color:#99f6e4}
-.dark #sql-settings-dialog [data-state="Previously saved"],.dark #sql-settings-dialog [data-state="Manually mapped"]{color:#cbd5e1}
-.dark #sql-settings-dialog nav button[aria-pressed="true"]{@apply border-blue-400 bg-blue-950 text-blue-100;}
+/* Shared by the compact report, its appearance preview, and the annual editor. */
+html.dark, [data-theme="dark"] {
+ color-scheme: dark;
+ --gs-bg: #111827;
+ --gs-surface: #1f2937;
+ --gs-surface-alt: #222e3d;
+ --gs-header: #263244;
+ --gs-border: #374151;
+ --gs-text: #f3f4f6;
+ --gs-text-secondary: #cbd5e1;
+ --gs-text-muted: #94a3b8;
+ --gs-toolbar: #192332;
+ --gs-hover: #334155;
+ --gs-sql-bg: #164e52;
+ --gs-total-bg: #17483f;
+ --gs-loss-bg: #403454;
+ --gs-selection: #22d3ee;
+ --gs-warning: #f59e0b;
+ --gs-error: #f87171;
+ --gs-sql-text: #9bd7cc;
+ --gs-warning-bg: #3b3021;
+ --gs-error-bg: #422b33;
+ --gs-overlay: rgb(8 12 18 / .68);
+}
+@theme inline {
+ --color-gs-surface: var(--gs-surface);
+ --color-gs-border: var(--gs-border);
+ --color-gs-text: var(--gs-text);
+ --color-gs-selection: var(--gs-selection);
+}
+
+html.dark dialog,
+html.dark #sql-settings-dialog.sql-modal {
+ background:var(--gs-surface);
+ color:var(--gs-text);
+ border-color:var(--gs-border);
+ box-shadow:0 16px 42px rgb(0 0 0 / .32);
+}
+html.dark dialog::backdrop,
+html.dark #sql-settings-dialog::backdrop,
+html.dark #sql-apply-loading::backdrop,
+html.dark #report-loading-overlay{background:var(--gs-overlay)}
+html.dark :is(dialog button, dialog input, dialog select, dialog textarea){
+ background:var(--gs-header);color:var(--gs-text);border-color:var(--gs-border)
+}
+html.dark dialog button:hover:not(:disabled){background:var(--gs-hover)}
+html.dark dialog button:disabled{color:var(--gs-text-muted);opacity:1}
+html.dark dialog :is(input,textarea)::placeholder{color:var(--gs-text-muted)}
+html.dark dialog :is(button,input,select,textarea,summary):focus-visible{
+ outline:2px solid var(--gs-selection);outline-offset:2px
+}
+html.dark #sql-settings-dialog button:not(:disabled){border-color:var(--gs-border)}
+html.dark #sql-settings-dialog button.sql-primary:not(:disabled){
+ background:var(--gs-sql-bg);color:var(--gs-text);border-color:var(--gs-sql-bg)
+}
+html.dark #sql-settings-dialog button.sql-primary:hover:not(:disabled){background:var(--gs-total-bg)}
+html.dark #report-confirmation-warning{background:var(--gs-warning-bg);color:var(--gs-warning)}
+html.dark #report-confirmation-recovery{background:var(--gs-header)}
+html.dark #recovered-sales :is(th,td){border-color:var(--gs-border)!important}
+html.dark #recovered-sales th{background:var(--gs-header)!important;color:var(--gs-text-secondary)}
+html.dark #recovered-sales [data-error]{color:var(--gs-error)}
+html.dark #recovered-sales [data-delete-recovered]:not(:disabled){color:var(--gs-error)!important}
+
+.dark #sql-settings-dialog :is(.sql-card,.sql-actions,.settings-preview,.settings-preview td,.sql-mapping-item,#sql-history-panel,#sql-message,#sql-row-status){
+ background:var(--gs-surface-alt);border-color:var(--gs-border)!important;color:var(--gs-text)
+}
+.dark #sql-settings-dialog :is(.sql-card-title,.settings-label){color:var(--gs-text)}
+.dark #sql-settings-dialog :is(.sql-help,.sql-empty,[class*="text-slate-"]:not(:where(#sql-row-value,#sql-row-options *)),#sql-column-tokens:empty::before){color:var(--gs-text-secondary)}
+.dark #sql-settings-dialog :is(.settings-preview th,.settings-preview tr:hover td,.settings-input,.sql-mapping-item>select,#sql-mapping-message){
+ background:var(--gs-toolbar)!important;color:var(--gs-text)!important;border-color:var(--gs-border)!important
+}
+.dark #sql-settings-dialog .settings-preview th{background:var(--gs-header)!important}
+.dark #sql-settings-dialog [class*="bg-slate-50"]:not(#settings-appearance *){background:var(--gs-header)}
+.dark #sql-settings-dialog :is([class*="bg-teal-50"],#sql-column-tokens button){background:var(--gs-sql-bg);color:var(--gs-text);border-color:var(--gs-border)}
+.dark #sql-settings-dialog :is(#sql-recovery-panel,#sql-month-warning){background:var(--gs-warning-bg);color:var(--gs-warning);border-color:var(--gs-border)}
+.dark #sql-settings-dialog :is(.sql-diagnostics,#sql-message[data-error=true]){color:var(--gs-error)}
+.dark #sql-settings-dialog #sql-message[data-error=true]{background:var(--gs-error-bg)}
+.dark #sql-settings-dialog :is([data-state="Auto-matched"],#sql-apply-reason[data-ready=true],.sql-mapping-item>button,[class*="text-teal-"]){color:var(--gs-sql-text)}
+.dark #sql-settings-dialog :is([data-state="Unmatched"],[data-state="Ambiguous"]){color:var(--gs-warning)}
+.dark #sql-settings-dialog :is(button:disabled,button.sql-primary:disabled){background:var(--gs-header);color:var(--gs-text-muted);border-color:var(--gs-border)}
+.dark #sql-settings-dialog button:hover:not(:disabled){background:var(--gs-hover);border-color:var(--gs-border)}
+.dark #sql-settings-dialog :is(button,summary,input,select,textarea):focus-visible{outline-color:var(--gs-selection)}
+.dark #sql-settings-dialog [class*="border-slate-"]{border-color:var(--gs-border)}
+.dark #sql-settings-dialog nav button[aria-pressed="true"]{border-color:var(--gs-selection);background:var(--gs-header);color:var(--gs-text)}
 #report-appearance-form input[type="color"]{padding:4px;height:36px}
 @media(prefers-reduced-motion:reduce){#sql-settings-dialog button,#sql-settings-dialog .settings-input{transition:none}}

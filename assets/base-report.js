@@ -74,7 +74,7 @@
  // coordinate system. Never zoom the browser or shrink desktop text below 10px.
  const table=document.querySelector('#genstat-report-table'),viewport=document.querySelector('.report-scroll');
  const referenceHighlights=createBaseReportReferenceHighlights(table,data.metadata,bar);
- let inspectingFormula=false,selectedRowLabel=null;
+ let inspectingFormula=false,selectedRowLabel=null,activeColumnHeading=null,activeColumnCells=[];
  function clearFormulaReferences(){
   inspectingFormula=false;
   if(selected?.hasAttribute('data-active-formula'))selected.classList.remove('selected');
@@ -217,11 +217,21 @@
   if(cell.hasAttribute('data-original-formula-editable'))return worksheetUnlocked&&!Object.hasOwn(data.preview,ref);
   return data.metadata[ref].editable;
  }
+ function highlightColumn(ref){
+  activeColumnHeading?.removeAttribute('data-active-coordinate');
+  for(const cell of activeColumnCells)cell.removeAttribute('data-active-column');
+  const name=ref?.match(/^[A-Z]+/)?.[0],column=data.metadata[ref]?.column;
+  activeColumnHeading=name?table.querySelector(`[data-excel-heading-column="${name}"]`):null;
+  activeColumnHeading?.setAttribute('data-active-coordinate','');
+  activeColumnCells=column?[...table.querySelectorAll('td[data-ref]')].filter(cell=>data.metadata[cell.dataset.ref]?.column===column):[];
+  for(const cell of activeColumnCells)cell.setAttribute('data-active-column','');
+ }
  function select(cell,inspect=inspectingFormula){
   selected?.classList.remove('selected');
   selected?.removeAttribute('data-active-formula');
   inspectingFormula=inspect;
   selected=cell;
+  highlightColumn(cell.dataset.ref);
   cell.classList.add('selected');
   const ref=cell.dataset.ref,metadata=data.metadata[ref],sql=data.sqlReplacements[ref];
   const isControlled=controlled(ref),formula=activeFormula(ref);
@@ -237,8 +247,59 @@
   const cell=e.target.closest('[data-classification]');
   if(cell)select(cell,!e.target.closest('.report-row-toggle'));
  });
- function recalculate(){const version=++sequence;dirty=true;status.textContent='Recalculating…';pending=pending.catch(()=>{}).then(async()=>{const result=await request('calculate');if(version!==sequence)return;renderCalculation(result);status.textContent='Unsaved changes';}).catch(e=>{status.textContent=e.message;status.classList.add('error');});return pending;}
- table.addEventListener('change',e=>{if(!e.target.matches('td input'))return;setManualValue(e.target.dataset.ref,e.target.value);select(e.target.closest('td'));recalculate();});
+ function recalculate(){
+  const version=++sequence;
+  dirty=true;status.textContent='Recalculating…';
+  pending=pending.catch(()=>{}).then(async()=>{
+   if(version!==sequence)return;
+   const result=await request('calculate');
+   if(version!==sequence)return;
+   renderCalculation(result);
+   status.textContent='Unsaved changes';status.classList.remove('error');
+  }).catch(e=>{
+   if(version!==sequence)return;
+   status.textContent=e.message;status.classList.add('error');
+  });
+  return pending;
+ }
+ function editableGridInput(input){
+  return input.matches('td input[data-ref]:enabled')&&!input.readOnly&&canEditCell(input.closest('td'));
+ }
+ function commitGridInput(input){
+  if(!editableGridInput(input)||input.value===String(inputValue(input.dataset.ref)))return;
+  setManualValue(input.dataset.ref,input.value);
+  if(selected===input.closest('td'))select(selected);
+  recalculate();
+ }
+ function adjacentGridInput(input,horizontal,direction){
+  const {row,column}=data.metadata[input.dataset.ref];
+  let next=null,distance=Infinity;
+  for(const candidate of table.querySelectorAll('td input[data-ref]')){
+   const position=data.metadata[candidate.dataset.ref];
+   const step=(horizontal?position.column-column:position.row-row)*direction;
+   const sameAxis=horizontal?position.row===row:position.column===column;
+   if(sameAxis&&step>0&&step<distance&&editableGridInput(candidate)&&candidate.getClientRects().length){
+    next=candidate;distance=step;
+   }
+  }
+  return next;
+ }
+ table.addEventListener('change',e=>commitGridInput(e.target));
+ table.addEventListener('keydown',e=>{
+  const input=e.target;
+  if(e.defaultPrevented||e.isComposing||e.ctrlKey||e.altKey||e.metaKey||!editableGridInput(input))return;
+  if(e.key==='Escape'){
+   e.preventDefault();
+   input.value=inputValue(input.dataset.ref);
+   return;
+  }
+  if(e.key!=='Enter'&&e.key!=='Tab')return;
+  const horizontal=e.key==='Tab';
+  const next=adjacentGridInput(input,horizontal,e.shiftKey?-1:1);
+  if(!horizontal||next)e.preventDefault();
+  commitGridInput(input);
+  next?.focus();
+ });
  function setWorksheetUnlocked(unlocked){
   worksheetUnlocked=unlocked;
   showUnlockState(unlocked);
@@ -339,8 +400,17 @@
   if(saving||loading||exporting)return;
   saving=true;saveButton.disabled=true;saveButton.setAttribute('aria-busy','true');
   status.textContent='Saving draft…';status.classList.remove('error');
-  try{await pending;status.textContent='Saving draft…';const result=await request('save');data.revision=result.revision;dirty=false;status.textContent='Draft saved';}
-  catch(e){status.textContent='Save failed. '+e.message;status.classList.add('error');}
+  // Use the same queue as recalculation so edits made during a draft write
+  // calculate against the new revision once the write has finished.
+  const write=pending.catch(()=>{}).then(async()=>{
+   const version=sequence;
+   status.textContent='Saving draft…';
+   const result=await request('save');
+   data.revision=result.revision;
+   if(version===sequence){dirty=false;status.textContent='Draft saved';}
+  }).catch(e=>{status.textContent='Save failed. '+e.message;status.classList.add('error');});
+  pending=write;
+  try{await write;}
   finally{saving=false;saveButton.disabled=false;saveButton.removeAttribute('aria-busy');}
  });
  // Reviewed SQL values enter the same live draft and Save Draft workflow.
@@ -490,6 +560,7 @@
    selectRowLabel(null);
    setWorksheetUnlocked(false);clearManualHistory();selected?.classList.remove('selected');selected=null;
    document.querySelector('#selection').textContent='Select a cell';document.querySelector('#cell-kind').textContent='Formula cells protected';
+   highlightColumn(null);
    bar.value='';bar.readOnly=true;setRestoreRecovery(null);notifyReport('');
    dirty=false;sqlIndicators();renderCalculation(result.calculation,true);
    const label=formatPeriod(target);periodLabel.textContent=label;table.setAttribute('aria-label',label+' KWH purchased, sold and system losses');
