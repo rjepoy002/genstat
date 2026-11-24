@@ -285,7 +285,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await monthPage.locator('[data-ref="G18"] .value').textContent(),'1,201,330.00');
   assert.equal(await monthPage.locator('[data-ref="F18"] .value').textContent(),'1,201,330.00');
   assert.equal(await monthPage.locator('[data-ref="Q18"] .value').textContent(),'18,019,950.00');
-  assert.deepEqual(await monthPage.locator('tr[hidden]').evaluateAll(rows=>rows.map(row=>Number(row.dataset.excelRow))),[16,19,21,34,37,46,47]);
+  assert.deepEqual(await monthPage.locator('tr[data-explicitly-hidden][hidden]').evaluateAll(rows=>rows.map(row=>Number(row.dataset.excelRow))),[16,19,21,34,37,46,47]);
   assert(await monthPage.locator('tr[data-excel-row="25"]').isVisible());
   for(const area of 'BCDEFGHIJKLMNOP'){
    assert.equal(await monthPage.locator(`[data-ref="${area}18"] .value`).textContent(),'1,201,330.00');
@@ -373,7 +373,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await totalToggle.getAttribute('aria-expanded'),'true');
   assert.equal(await periodPage.locator('#report-month').inputValue(),'202707');
   assert.equal(await periodPage.locator('#report-period').textContent(),'July 2027');
-  assert.deepEqual(await periodPage.locator('tr[hidden]').evaluateAll(rows=>rows.map(row=>Number(row.dataset.excelRow))),[16,19,21,34,37,46,47]);
+  assert.deepEqual(await periodPage.locator('tr[data-explicitly-hidden][hidden]').evaluateAll(rows=>rows.map(row=>Number(row.dataset.excelRow))),[16,19,21,34,37,46,47]);
   assert.equal(await periodPage.locator('[data-ref="G18"] .value').textContent(),'1,201,329.00');
   assert.equal(await periodPage.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');
   assert.equal(await periodPage.locator('[data-ref="Q18"] .value').textContent(),'18,019,935.00');

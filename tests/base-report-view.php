@@ -19,4 +19,18 @@ view_check(abs($changed['cells']['B34']['value']-$initial['cells']['B34']['value
 view_check(abs($changed['cells']['B46']['value']-$initial['cells']['B46']['value']+1)<1e-7,'Hidden B46 still depends on hidden B34');
 view_check(abs(($changed['cells']['B47']['value']-$initial['cells']['B47']['value'])+1/$initial['cells']['B16']['value'])<1e-12,'Hidden B47 still calculates rate from hidden B46');
 view_check(!base_report_row_spacer($s,$l['report'],45),'Blank merged row is not collapsed');
+$candidates=base_report_empty_row_candidates($s,$l['report']);
+view_check(array_keys($candidates)===[13,14,17,20,29,32,35,38,41,42],'Only rows empty across the browser Summary are spacer candidates');
+$probe=$s;
+$probe['cells']['S29']=['value'=>'0'];
+$probe['cells']['T32']=['value'=>'','formula'=>'=""'];
+$probe['cells']['B42']=['value'=>' ','editable'=>true];
+view_check(array_keys(base_report_empty_row_candidates($probe,$l['report']))===[13,14,17,20,29,32,35,38,41],
+ 'Off-table values and formulas do not protect a browser spacer, but an empty manual input does');
+$probe=$s;
+$probe['cells']['B29']=['value'=>" \t\u{00a0}",'style'=>123];
+view_check(isset(base_report_empty_row_candidates($probe,$l['report'])[29]),'Whitespace and formatting alone leave a row empty');
+view_check(array_keys(base_report_empty_rows($candidates,['formulas'=>['B32'=>'=""','S13'=>'=""']],
+ ['S29'=>['value'=>0],'R20'=>['value'=>0]],[42],base_report_rendered_columns($l['report'])))===[13,14,17,29,35,38,41],
+ 'A visible zero, visible saved formula, or SQL configuration keeps its row visible');
 view_check(hash_file('sha256',__DIR__.'/../excel-files/reference/GENSTAT_BASE.xlsx')==='752c1ad06bd770ea749ef7925a49adbc725ee81b3a7dd6342f5b1585253c3dce','Reference workbook checksum unchanged');

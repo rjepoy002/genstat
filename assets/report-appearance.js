@@ -1,8 +1,8 @@
 'use strict';
 (()=>{
  const key='genstat:appearance:v1';
- const defaults={showHeadings:'on',theme:'system',rowHeight:36,fontSize:12,columnSpacing:'comfortable',selectionBorderWidth:2,selectionBorderColor:'#2563EB'};
- const options={showHeadings:['on','off'],theme:['system','light','dark'],rowHeight:[28,36,44],fontSize:[11,12,13,14],columnSpacing:['compact','comfortable'],selectionBorderWidth:[2,3]};
+ const defaults={showHeadings:'on',showEmptyRows:'off',theme:'system',rowHeight:36,fontSize:12,columnSpacing:'comfortable',selectionBorderWidth:2,selectionBorderColor:'#2563EB'};
+ const options={showHeadings:['on','off'],showEmptyRows:['off','on'],theme:['system','light','dark'],rowHeight:[28,36,44],fontSize:[11,12,13,14],columnSpacing:['compact','comfortable'],selectionBorderWidth:[2,3]};
  const system=matchMedia('(prefers-color-scheme: dark)');
  const root=document.documentElement;
  function validated(input){
@@ -19,6 +19,7 @@
   target.dataset.theme=dark?'dark':'light';
   target.style.colorScheme=target.dataset.theme;
   target.dataset.excelHeadings=settings.showHeadings;
+  target.dataset.showEmptyRows=settings.showEmptyRows;
   for(const [name,value] of Object.entries({
    '--report-row-height':settings.rowHeight+'px','--report-font-size':settings.fontSize+'px',
    '--report-cell-padding':settings.columnSpacing==='compact'?'4px':'7px',
@@ -51,15 +52,23 @@
    dialog.scrollTop=0;
   }
   const showAppearance=show=>showSection(show?'appearance':'reporting');
+  function previewEmptyRows(value){
+   root.dataset.showEmptyRows=value;
+   dispatchEvent(new Event('genstat-appearance'));
+  }
+  function restoreEmptyRows(){previewEmptyRows(applied.showEmptyRows);}
   reportingTab.addEventListener('click',()=>showSection('reporting'));
   appearanceTab.addEventListener('click',()=>showSection('appearance'));
   byId('settings-security-tab').addEventListener('click',()=>showSection('security'));
   byId('settings-coop-tab').addEventListener('click',()=>showSection('coop'));
   document.addEventListener('genstat-settings-unlocked',()=>{fill(applied);showAppearance(false);});
-  dialog.addEventListener('close',()=>fill(applied));
-  form.addEventListener('input',()=>{style(preview,draft());status.textContent='';});
-  byId('appearance-reset').addEventListener('click',()=>fill(defaults));
-  byId('appearance-cancel').addEventListener('click',()=>{fill(applied);showAppearance(false);reportingTab.focus();});
+  dialog.addEventListener('close',()=>{fill(applied);restoreEmptyRows();});
+  form.addEventListener('input',event=>{
+   const next=draft();style(preview,next);status.textContent='';
+   if(event.target.name==='showEmptyRows')previewEmptyRows(next.showEmptyRows);
+  });
+  byId('appearance-reset').addEventListener('click',()=>{fill(defaults);previewEmptyRows(defaults.showEmptyRows);});
+  byId('appearance-cancel').addEventListener('click',()=>{fill(applied);restoreEmptyRows();showAppearance(false);reportingTab.focus();});
   form.addEventListener('submit',async event=>{
    event.preventDefault();
    const button=form.querySelector('[type=submit]');

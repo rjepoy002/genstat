@@ -4,6 +4,7 @@ require_once __DIR__.'/../lib/base-report.php';
 function base_expect(bool $ok,string $message): void{if(!$ok)throw new RuntimeException($message);echo 'PASS: '.$message.PHP_EOL;}
 $source=__DIR__.'/../excel-files/reference/GENSTAT_BASE.xlsx';$hash=hash_file('sha256',$source);$raw=build_layout($source);$l=base_report_layout();$s=$l['sheets'][0];
 base_expect($l['report']['range']==='A8:S47','Source-discovered range A8:S47');
+base_expect(base_report_rendered_columns($l['report'])===range(1,18),'Summary rendering ends at column R');
 $original=expanded_formulas($raw['sheets'][0]);$formulas=expanded_formulas($s);base_expect($original===$formulas,'Every source formula and dependency preserved');
 foreach($raw['sheets'][0]['cells'] as $ref=>$cell){base_expect(($s['cells'][$ref]['formula']===$cell['formula'])&&($s['cells'][$ref]['formulaAttributes']===$cell['formulaAttributes'])&&$s['cells'][$ref]['style']===$cell['style']&&$s['cells'][$ref]['value']===$cell['value'],'Original formula expression, attributes, value and style retained: '.$ref);}
 base_expect($s['rows']===$raw['sheets'][0]['rows']&&$s['columns']===$raw['sheets'][0]['columns']&&$s['merges']===$raw['sheets'][0]['merges'],'Source row heights, column widths and merges retained');
@@ -17,6 +18,9 @@ foreach($s['cells'] as $ref=>$c){if(!range_contains($l['report']['range'],$ref))
 }
 $changed=base_report_calculate($l,['B11'=>(string)((float)$s['cells']['B11']['value']+100)]);
 base_expect(abs($changed['cells']['Q11']['value']-$calc['cells']['Q11']['value']-100)<1e-7,'Editing B11 recalculates Q11 by exactly 100');
+base_expect(abs($changed['cells']['R11']['value']-$calc['cells']['R11']['value']-100)<1e-7&&
+ abs($calc['cells']['R11']['value']-$calc['cells']['S11']['value']-$calc['cells']['Q11']['value'])<1e-7,
+ 'The To Date total still uses the unrendered prior month value');
 base_expect(abs($changed['cells']['B15']['value']-$calc['cells']['B15']['value']-100)<1e-7,'Editing B11 recalculates dependent purchased total B15');
 try{base_report_validate($l,['Q11'=>'1']);throw new RuntimeException('Formula overwrite accepted');}catch(InvalidArgumentException $e){echo 'PASS: Formula overwrite rejected'.PHP_EOL;}
 require_once __DIR__.'/../lib/base-report-export.php';
@@ -30,6 +34,8 @@ try{
  $sheetDoc=xml_doc(zip_text(zip_read($temporaryExport),$s['path']));
 }finally{unlink($temporaryExport);}
 $xpath=xml_path($sheetDoc);
+base_expect($xpath->query('//s:c[@r="S11"]/s:v')->length===1&&$xpath->query('//s:c[@r="S21"]/s:f')->length===1&&
+ str_contains($xpath->query('//s:c[@r="R11"]/s:f')->item(0)->textContent,'S11'),'Excel export retains column S values and formulas and the R11 dependency');
 base_expect($xpath->query('//s:c[@r="F18"]/s:f')->length===0&&(float)$xpath->query('//s:c[@r="F18"]/s:v')->item(0)->textContent===123.0,'Numeric formula replacement exports as a numeric Excel cell');
 base_expect(hash_file('sha256',$source)===$hash,'Source workbook unchanged');
 $fullEngine=new FormulaEngine($l);$fullEngine->results();

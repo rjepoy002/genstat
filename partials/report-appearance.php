@@ -3,6 +3,7 @@
   <h3 id="appearance-title" class="m-0 text-lg font-semibold">Table Appearance</h3>
   <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
    <label class="settings-label">Show Row &amp; Column Headings<select class="settings-input" name="showHeadings"><option value="on">On</option><option value="off">Off</option></select></label>
+   <label class="settings-label">Show empty rows<select class="settings-input" name="showEmptyRows" aria-describedby="appearance-empty-rows-help"><option value="off">Off</option><option value="on">On</option></select><span id="appearance-empty-rows-help" class="sql-help">Display empty spacer rows from the original Excel worksheet.</span></label>
    <label class="settings-label">Theme<select class="settings-input" name="theme"><option value="system">System Default</option><option value="light">Light Mode</option><option value="dark">Dark Mode</option></select></label>
    <label class="settings-label">Row height<select class="settings-input" name="rowHeight"><option value="28">Compact (28px)</option><option value="36">Comfortable (36px)</option><option value="44">Spacious (44px)</option></select></label>
    <label class="settings-label">Font size<select class="settings-input" name="fontSize"><option value="11">11px</option><option value="12">12px</option><option value="13">13px</option><option value="14">14px</option></select></label>

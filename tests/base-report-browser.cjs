@@ -187,9 +187,9 @@ async function checkGridKeys(browser,url){
    assert.equal((await denied.json()).error,error);
   }
   assert.equal(await page.locator('#genstat-report-table tbody tr').count(),38);
-  assert.equal(await page.locator('td input').count(),122);
+  assert.equal(await page.locator('td input').count(),96);
   assert.equal(await page.locator('[data-classification="database_input"]').count(),96);
-  assert.equal(await page.locator('[data-classification="formula"]').count(),312);
+  assert.equal(await page.locator('[data-classification="formula"]').count(),311);
   assert.equal(await page.locator('[data-ref="T8"]').count(),0);
   assert.equal(await page.locator('[data-ref="A50"]').count(),0);
   assert.equal(await page.locator('[data-ref="H25"] .value').textContent(),'(477.00)');
@@ -211,7 +211,7 @@ async function checkGridKeys(browser,url){
   assert.deepEqual(await edge('A11','left'),blueVertical);
   assert.deepEqual(await edge('B11','top'),blueHorizontal);
   assert.deepEqual(await edge('Q11','bottom'),blueHorizontal);
-  assert.deepEqual(await edge('S11','right'),blueVertical);
+  assert.deepEqual(await edge('R11','right'),blueVertical);
   await page.locator('#total-group-toggle').click();
   assert.equal(await selectedRows.count(),0);
   await label11.click();

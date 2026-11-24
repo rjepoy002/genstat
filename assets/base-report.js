@@ -73,6 +73,35 @@
  // Element-only zoom keeps native table layout and sticky cells in the same
  // coordinate system. Never zoom the browser or shrink desktop text below 10px.
  const table=document.querySelector('#genstat-report-table'),viewport=document.querySelector('.report-scroll');
+ const spacerRows=new Map([...table.querySelectorAll('[data-spacer-candidate]')].map(row=>[Number(row.dataset.excelRow),{row,refs:[]}]));
+ const renderedColumns=new Set([...table.querySelectorAll('col[data-excel-column]')].map(col=>Number(col.dataset.excelColumn)));
+ for(const [ref,cell] of Object.entries(data.metadata)){
+  if(renderedColumns.has(cell.column))spacerRows.get(cell.row)?.refs.push(ref);
+ }
+ data.configuredRows=JSON.parse(table.dataset.configuredRows);
+ function applyEmptyRowVisibility(cells){
+  const show=document.documentElement.dataset.showEmptyRows==='on';
+  const configured=new Set(data.configuredRows);
+  for(const [number,{row,refs}] of spacerRows){
+   if(cells){
+    const occupied=refs.some(ref=>{
+     const value=cells[ref]?.value;
+     return Object.hasOwn(data.formulas,ref)||(value!==undefined&&value!==null&&String(value).trim()!=='');
+    });
+    row.toggleAttribute('data-empty-row',!configured.has(number)&&!occupied);
+    row.classList.toggle('spacer-row',row.hasAttribute('data-empty-row'));
+   }
+   row.hidden=row.hasAttribute('data-explicitly-hidden')||(!show&&row.hasAttribute('data-empty-row'));
+  }
+  if(selected?.closest('tr[hidden]')){
+   selected.classList.remove('selected');
+   selected.removeAttribute('data-active-formula');
+   selected=null;highlightColumn(null);
+   document.querySelector('#selection').textContent='Select a cell';
+   document.querySelector('#cell-kind').textContent='Formula cells protected';
+   bar.value='';bar.readOnly=true;refreshFormulaReferences();
+  }
+ }
  const referenceHighlights=createBaseReportReferenceHighlights(table,data.metadata,bar);
  let inspectingFormula=false,selectedRowLabel=null,activeColumnHeading=null,activeColumnCells=[];
  function clearFormulaReferences(){
@@ -157,7 +186,8 @@
   for(const [column,width] of numericWidths)column.style.width=(width+extra)+'px';
  }
  addEventListener('resize',sizeNumericColumns);
- addEventListener('genstat-appearance',sizeNumericColumns);sizeNumericColumns();
+ addEventListener('genstat-appearance',()=>{applyEmptyRowVisibility();sizeNumericColumns();refreshFormulaReferences();});
+ applyEmptyRowVisibility();sizeNumericColumns();
  data.sqlReplacements??={};
  data.sqlSources??={};
  data.sqlTargets??={};
@@ -193,6 +223,7 @@
   const result=await response.json();if(!response.ok||result.error)throw Error(result.error||'Request failed');return result;
  }
  function renderCalculation(result,inputs=false,preserveActive=false){
+  applyEmptyRowVisibility(result.cells);
   if(result.recoveredSales)data.recoveredSales=result.recoveredSales;
   for(const [ref,c] of Object.entries(result.cells)){
    const cell=table.querySelector(`[data-classification][data-ref="${ref}"]`);if(!cell||cell.tagName==='TH')continue;
@@ -433,7 +464,7 @@
    if(month!==data.month)return;
    const result=await request('calculate',{refreshTotal:true});
    if(month!==data.month)return;
-   for(const key of ['total','sqlTargets','previewToken','coopSyncWarning'])data[key]=result[key];
+   for(const key of ['total','sqlTargets','configuredRows','previewToken','coopSyncWarning'])data[key]=result[key];
    displayCoopSync();sqlIndicators();renderCalculation(result,true,true);
    if(selected&&!editingRef)select(selected);
   }).catch(()=>{
@@ -449,6 +480,8 @@
    sqlIndicators();sizeNumericColumns();if(selected)select(selected);
   },
   applySqlResult(result){setRestoreRecovery(null);
+   const configuredRow=Number(result.record?.template_row_key?.match(/\/A(\d+)$/)?.[1]);
+   if(configuredRow&&!data.configuredRows.includes(configuredRow))data.configuredRows.push(configuredRow);
    data.values=result.values??data.values;data.formulas=result.formulas??data.formulas;
    data.sqlReplacements=result.sqlReplacements??data.sqlReplacements;
    data.sqlSources=result.sqlSources??data.sqlSources;
@@ -469,6 +502,7 @@
      if(version===sequence){
       data.total=calculation.total;data.previewToken=calculation.previewToken;
       data.sqlTargets=calculation.sqlTargets??data.sqlTargets;sqlIndicators();
+      data.configuredRows=calculation.configuredRows??data.configuredRows;
       if(Object.hasOwn(calculation,'coopSyncWarning')){data.coopSyncWarning=calculation.coopSyncWarning;displayCoopSync();}
       renderCalculation(calculation,true);if(selected)select(selected);
       if(soldTotalUnavailable())status.textContent='Total KWH Sold is unavailable.';

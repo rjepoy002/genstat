@@ -244,7 +244,11 @@ function qs_period_preview(array $layout,bool $onlyTotal=false,bool $strict=fals
    }
   }
  }
- return ['values'=>$values,'total'=>$total,'sqlTargets'=>qs_enabled_value_targets($layout,$records)]+($strict?['matchedRows'=>$matchedRows]:[]);
+ $configuredRows=[];
+ $prefix='genstat-base/'.$layout['sheets'][0]['name'].'/A';
+ foreach(array_keys($records) as $key)if(str_starts_with($key,$prefix)&&ctype_digit($suffix=substr($key,strlen($prefix))))$configuredRows[]=(int)$suffix;
+ return ['values'=>$values,'total'=>$total,'sqlTargets'=>qs_enabled_value_targets($layout,$records),
+  'configuredRows'=>$configuredRows]+($strict?['matchedRows'=>$matchedRows]:[]);
 }
 function qs_period_preview_token(array $layout,array $values,array $total): string {
  return hash_hmac('sha256',base_report_scope($layout).':'.qs_stable_hash([$values,$total]),$_SESSION['baseCsrf']);

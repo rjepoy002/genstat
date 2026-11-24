@@ -1,7 +1,7 @@
 'use strict';
 const {chromium}=require(process.env.TEMP+'\\genstat-browser\\node_modules\\playwright');
 const assert=require('assert');
-const expected=[16,19,21,34,37,46,47];
+const expected=[13,14,16,17,19,20,21,29,32,34,35,37,38,41,42,46,47];
 (async()=>{
  const browser=await chromium.launch({executablePath:'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',headless:true});
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -30,6 +30,7 @@ const expected=[16,19,21,34,37,46,47];
   assert(await rowHeading(16).isHidden());
   assert.equal(await rowHeading(17).textContent(),'17');
   assert(await letter('Q').isHidden());
+  assert.equal(await page.locator('#genstat-report-table col[data-column="S"], #genstat-report-table [data-ref^="S"], [data-excel-heading-column="S"]').count(),0);
   const coordinates=await page.evaluate(()=>{
    const cell=document.querySelector('td[data-ref="F18"]');
    const heading=document.querySelector('[data-excel-heading-column="F"]');
@@ -77,14 +78,24 @@ const expected=[16,19,21,34,37,46,47];
   assert.equal(await toggle.getAttribute('aria-expanded'),'true');
   assert.equal(await toggle.getAttribute('aria-label'),'Hide Totals');
   assert(await letter('Q').isVisible());
-  assert(await letter('S').isVisible());
+  assert(await letter('R').isVisible());
+  assert.equal(await letter('S').count(),0);
   assert.equal(await toggle.getAttribute('data-tooltip'),'Hide Totals');
   assert.equal(await page.locator('th[data-ref="Q8"]').getAttribute('colspan'),'2');
   assert(await tableWidth()>collapsedWidth+100);
   assert.equal(await page.locator('[data-ref="Q18"] .value').textContent(),total);
-  for(const ref of ['Q9','R9','S9'])assert(await page.locator(`[data-ref="${ref}"]`).isVisible());
+  assert.deepEqual(await page.locator('thead tr[data-excel-row="9"] .value').allTextContents(),['This Month','To Date']);
   assert.deepEqual(requests,[],'Toggle does not request report data');
   page.off('request',trackRequest);
+  const cumulative=page.locator('td[data-ref="R11"]');
+  await cumulative.focus();
+  assert.match(await page.locator('#formula').inputValue(),/S11/);
+  assert.match(await page.locator('#report-reference-note').getAttribute('title'),/S11/);
+  assert(await page.locator('td[data-ref="Q11"]').getAttribute('data-formula-reference')!==null);
+  await cumulative.press('Tab');
+  assert(await notes.locator('summary').evaluate(element=>element===document.activeElement));
+  await page.locator('td[data-ref="B28"]').press('Enter');
+  assert.equal(await page.evaluate(()=>document.activeElement.closest('td')?.dataset.ref),'B30');
   await page.reload();assert.equal(await toggle.getAttribute('aria-expanded'),'true');
   await toggle.focus();await page.keyboard.press('Space');
   await page.reload();assert.equal(await toggle.getAttribute('aria-expanded'),'false');
@@ -98,9 +109,14 @@ const expected=[16,19,21,34,37,46,47];
   for(const [width,height] of [[1920,1080],[1600,900],[1366,768],[1280,720],[390,844]]){
    await page.setViewportSize({width,height});await page.goto(process.env.GENSTAT_TEST_COMPACT_URL||'http://localhost/genstat/');await page.locator('#genstat-report-table').waitFor();
    assert.deepEqual(await page.locator('tr[hidden]').evaluateAll(rows=>rows.map(r=>Number(r.dataset.excelRow))),expected);
-   for(const row of expected){assert(!(await page.locator(`tr[data-excel-row="${row}"]`).isVisible()));assert(await page.locator(`tr[data-excel-row="${row}"] [data-classification="formula"]`).count()>0);}
+   for(const row of expected){
+    const hiddenRow=page.locator(`tr[data-excel-row="${row}"]`);
+    assert(await hiddenRow.isHidden());
+    assert(await hiddenRow.evaluate(element=>element.hasAttribute('data-empty-row')||
+     Boolean(element.querySelector('[data-classification="formula"]'))));
+   }
    assert(await page.locator('tr[data-excel-row="25"]').isVisible());
-   assert.equal(await page.locator('[data-classification="formula"]').count(),312);assert.equal(await page.locator('[data-classification="database_input"]').count(),96);
+   assert.equal(await page.locator('[data-classification="formula"]').count(),311);assert.equal(await page.locator('[data-classification="database_input"]').count(),96);
    const metrics=await page.evaluate(()=>{
     const viewport=document.querySelector('.report-scroll'),table=document.querySelector('#genstat-report-table');
     const clipped=[];for(const cell of table.querySelectorAll('tbody tr:not([hidden]):not(.spacer-row) td:not(.particulars)')){const span=cell.querySelector('.value');if(span.scrollWidth>span.clientWidth+1)clipped.push(cell.dataset.ref);}
@@ -111,12 +127,18 @@ const expected=[16,19,21,34,37,46,47];
    assert(metrics.scrollHeight>=Math.floor(metrics.tableHeight)-1,'All rows remain reachable');
    const before=await page.locator('[data-ref="B8"]').evaluate(e=>e.getBoundingClientRect().top);
    await page.locator('.report-scroll').evaluate(e=>{e.scrollLeft=e.scrollWidth;e.scrollTop=e.scrollHeight;});
-   const pinned=await page.evaluate(()=>{const viewport=document.querySelector('.report-scroll').getBoundingClientRect(),a=document.querySelector('[data-ref="A30"]').getBoundingClientRect(),b=document.querySelector('[data-ref="B8"]').getBoundingClientRect(),header2=document.querySelector('[data-ref="S9"]').getBoundingClientRect(),header1=document.querySelector('[data-ref="S8"]').getBoundingClientRect();return {left:a.left,viewportLeft:viewport.left,top:b.top,header2Top:header2.top,header1Bottom:header1.bottom,right:document.querySelector('[data-ref="S44"]').getBoundingClientRect().right,viewportRight:viewport.right};});
-   assert(Math.abs(pinned.left-pinned.viewportLeft-36)<3,'Particulars sticky');assert(Math.abs(before-pinned.top)<2,'Headers sticky');assert(Math.abs(pinned.header2Top-pinned.header1Bottom)<2,'Two header rows aligned');assert(pinned.right<=pinned.viewportRight,'Final comparison accessible');
+   const pinned=await page.evaluate(()=>{const viewport=document.querySelector('.report-scroll').getBoundingClientRect(),a=document.querySelector('[data-ref="A30"]').getBoundingClientRect(),b=document.querySelector('[data-ref="B8"]').getBoundingClientRect(),header2=document.querySelector('[data-ref="R9"]').getBoundingClientRect(),header1=document.querySelector('[data-ref="Q8"]').getBoundingClientRect(),last=document.querySelector('[data-ref="R44"]').getBoundingClientRect();return {left:a.left,viewportLeft:viewport.left,top:b.top,header2Top:header2.top,header1Bottom:header1.bottom,right:last.right,viewportRight:viewport.right,tableRight:document.querySelector('#genstat-report-table').getBoundingClientRect().right};});
+   assert(Math.abs(pinned.left-pinned.viewportLeft-36)<3,'Particulars sticky');assert(Math.abs(before-pinned.top)<2,'Headers sticky');assert(Math.abs(pinned.header2Top-pinned.header1Bottom)<2,'Two header rows aligned');assert(pinned.right<=pinned.viewportRight&&Math.abs(pinned.tableRight-pinned.right)<1,'To Date is flush with the table edge');
    await page.locator('.report-scroll').evaluate(e=>{e.scrollLeft=0;e.scrollTop=0;});
    await page.screenshot({path:`tests/base-report-compact-${width}.png`});
   }
   await page.setViewportSize({width:1600,height:900});
+  await page.locator('#report-month').selectOption('202608');
+  await page.waitForFunction(()=>window.genstatReport.snapshot().month==='202608'&&
+   document.querySelector('#report-loading-overlay').hidden);
+  assert.deepEqual(await page.locator('col[data-total-column]').evaluateAll(cols=>cols.map(col=>col.dataset.column)),['Q','R']);
+  assert.equal(await page.locator('#genstat-report-table [data-ref^="S"]').count(),0);
+  assert.equal(await page.locator('th[data-ref="Q8"]').getAttribute('colspan'),'2');
   const appearancePage=await browser.newPage({viewport:{width:820,height:700},colorScheme:'dark'});
   const appearanceErrors=[];
   appearancePage.on('pageerror',error=>appearanceErrors.push(error.message));
@@ -183,13 +205,27 @@ const expected=[16,19,21,34,37,46,47];
   assert(await appearancePage.locator('#settings-reporting').isHidden());
   const pref=name=>appearancePage.locator(`#report-appearance-form [name="${name}"]`);
   const preview=appearancePage.locator('#appearance-preview');
+  const spacer=appearancePage.locator('tr[data-excel-row="29"]');
+  assert(await spacer.isHidden());
+  assert(await appearancePage.locator('tr[data-excel-row="23"]').isVisible());
+  const outsideContentRows=appearancePage.locator('tr[data-empty-row]').filter({visible:false});
+  assert.deepEqual(await outsideContentRows.evaluateAll(rows=>rows.map(row=>Number(row.dataset.excelRow))),
+   [13,14,17,20,29,32,35,38,41,42]);
+  assert.equal(await pref('showEmptyRows').inputValue(),'off');
+  await pref('showEmptyRows').selectOption('on');
+  await spacer.waitFor({state:'visible'});
+  assert(await appearancePage.locator('tr[data-excel-row="13"]').isVisible());
+  assert.equal(await spacer.locator('th').textContent(),'29');
+  assert(await appearancePage.locator('tr[data-excel-row="16"]').isHidden());
   assert.equal(await pref('showHeadings').inputValue(),'on');
   await pref('showHeadings').selectOption('off');
   assert(await preview.locator('thead [data-excel-heading]').first().isHidden());
   assert.equal(await appearancePage.locator('html').getAttribute('data-excel-headings'),'on');
   await settings.getByRole('button',{name:'Cancel',exact:true}).click();
+  assert(await spacer.isHidden());
   await appearancePage.locator('#settings-appearance-tab').click();
   assert.equal(await pref('showHeadings').inputValue(),'on');
+  await pref('showEmptyRows').selectOption('on');
   await pref('showHeadings').selectOption('off');
   await pref('theme').selectOption('light');
   await pref('rowHeight').selectOption('44');
@@ -226,6 +262,8 @@ const expected=[16,19,21,34,37,46,47];
   assert(await settings.isHidden());
   assert.equal(await appearancePage.locator('#sql-settings-open').evaluate(el=>el===document.activeElement),true);
   await appearancePage.reload();
+  await spacer.waitFor({state:'visible'});
+  assert(await appearancePage.locator('tr[data-excel-row="16"]').isHidden());
   assert.equal(await appearancePage.locator('html').getAttribute('data-theme'),'light');
   assert.equal(await appearancePage.locator('#genstat-report-table').evaluate(el=>getComputedStyle(el).fontSize),'14px');
   assert.equal(await appearancePage.locator('html').getAttribute('data-excel-headings'),'off');
@@ -237,6 +275,7 @@ const expected=[16,19,21,34,37,46,47];
   await settings.getByRole('button',{name:'Apply Changes'}).click();
   await appearancePage.locator('#appearance-status').getByText('Appearance saved.',{exact:true}).waitFor();
   assert.equal(await appearancePage.locator('html').getAttribute('data-theme'),'dark');
+  assert(await spacer.isHidden());
   assert(await appearancePage.locator('#genstat-report-table .excel-column-heading').isVisible());
   await appearancePage.emulateMedia({colorScheme:'light'});
   await appearancePage.waitForFunction(()=>document.documentElement.dataset.theme==='light');
