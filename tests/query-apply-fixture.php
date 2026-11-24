@@ -29,7 +29,7 @@ if($action==='adjustment-export'){
  require $root.'/lib/workbook-storage.php';
  $zip=workbook_validate($root.'/adjustment-export.xlsx');
  $xml=xml_path(xml_doc(zip_text($zip,'xl/worksheets/sheet1.xml')));
- if($xml->evaluate('string(//s:c[@r="B25"]/s:v)')!=='910'
+ if($xml->evaluate('string(//s:c[@r="B25"]/s:v)')!==($argv[3]??'910')
    ||$xml->evaluate('count(//s:c[@r="B25"]/s:f)')!==0.0
    ||$xml->evaluate('count(//s:c[@r="Q25"]/s:f)')!==1.0)
   throw new RuntimeException('Expected numeric A25 result and preserved total formula in export.');

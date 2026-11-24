@@ -5,6 +5,8 @@ require_once __DIR__.'/render.php';
 require_once __DIR__.'/formula-engine.php';
 require_once __DIR__.'/sql-replacements.php';
 require_once __DIR__.'/recovered-sales.php';
+require_once __DIR__.'/files.php';
+require_once __DIR__.'/base-report-sql-manual.php';
 
 function base_report_draft_path(array $layout): string {
  return __DIR__.'/../storage/base-report-'.base_report_scope($layout).'.json';
@@ -66,6 +68,7 @@ function base_report_calculate(array $l,array $values=[],array $formulas=[],arra
  if(isset($l['reportMonth'])){
   $recovered=recov_summary($l,$l['recoveryState']??base_report_recovery_state($l),base_report_month($l));
  }
+ $total=base_sql_manual_effective($l,$total);
  $sourceInputs=$replacements;
  foreach($total as $ref=>$value){$sourceInputs[$ref]=['value'=>$value??'#N/A'];unset($values[$ref],$formulas[$ref]);}
  foreach($recovered as $ref=>$value){
@@ -95,7 +98,9 @@ function base_report_calculate(array $l,array $values=[],array $formulas=[],arra
   if(isset($values[$ref])||array_key_exists($ref,$total)||$cell['classification']==='formula')$display['type']=$error?'e':(is_numeric($value)?'n':'str');
   $out[$ref]=['value'=>$value,'display'=>isset($recovered[$ref])?number_format((float)$recovered[$ref],2):display_value($display,$l),'error'=>$error];
   if(!$error&&isset($coopRefs[$ref],$total[$ref])){
-   [$whole,$fraction]=array_pad(explode('.',$total[$ref],2),2,'');
+   $amount=$total[$ref];
+   if(stripos($amount,'e')!==false)$amount=number_format((float)$amount,2,'.','');
+   [$whole,$fraction]=array_pad(explode('.',$amount,2),2,'');
    $out[$ref]['display']=preg_replace('/\B(?=(\d{3})+(?!\d))/',',',$whole).'.'.str_pad($fraction,2,'0');
   }
  }

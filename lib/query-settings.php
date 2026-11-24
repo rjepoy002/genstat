@@ -206,7 +206,7 @@ function qs_period_preview(array $layout,bool $onlyTotal=false,bool $strict=fals
  }catch(mysqli_sql_exception|QuerySettingsError $e){
   throw new QuerySettingsError('SQL reporting configuration is unavailable.',503,$e);
  }
- $area=null;$values=[];$total=[];$results=[];$matchedRows=[];
+ $area=null;$values=[];$total=[];$results=[];$matchedRows=[];$warnings=[];
  $rows=qs_rows($layout);$month=base_report_month($layout);
  foreach($records as $key=>$record){
   if(!$record['enabled']||$key===QS_COOP_ROW_KEY)continue;
@@ -237,18 +237,19 @@ function qs_period_preview(array $layout,bool $onlyTotal=false,bool $strict=fals
     else $values[$ref]=$change['value'];
    }
   }catch(mysqli_sql_exception|QuerySettingsError $e){
-   if($strict||!$isTotal){
+   if($strict){
     if($e instanceof QuerySettingsError)throw new QuerySettingsError($rows[$key]['label'].': '.$e->getMessage(),0,$e);
-    if($strict)throw new QuerySettingsError($rows[$key]['label'].': The saved SQL query could not be executed.',0,$e);
-    throw $e;
+    throw new QuerySettingsError($rows[$key]['label'].': The saved SQL query could not be executed.',0,$e);
    }
+   $warnings[]=['cell'=>'A'.$rows[$key]['row'],'formula'=>$rows[$key]['label'],
+    'message'=>'SQL refresh failed. Last valid values are used where available.'];
   }
  }
  $configuredRows=[];
  $prefix='genstat-base/'.$layout['sheets'][0]['name'].'/A';
  foreach(array_keys($records) as $key)if(str_starts_with($key,$prefix)&&ctype_digit($suffix=substr($key,strlen($prefix))))$configuredRows[]=(int)$suffix;
  return ['values'=>$values,'total'=>$total,'sqlTargets'=>qs_enabled_value_targets($layout,$records),
-  'configuredRows'=>$configuredRows]+($strict?['matchedRows'=>$matchedRows]:[]);
+  'configuredRows'=>$configuredRows,'sqlWarnings'=>$warnings]+($strict?['matchedRows'=>$matchedRows]:[]);
 }
 function qs_period_preview_token(array $layout,array $values,array $total): string {
  return hash_hmac('sha256',base_report_scope($layout).':'.qs_stable_hash([$values,$total]),$_SESSION['baseCsrf']);

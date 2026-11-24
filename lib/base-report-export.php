@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/recovered-sales-export.php';
 
 function base_report_export(array $layout,array $values,array $formulas,array $replacements,array $calculation,array $total=[]): string {
+ $total=base_sql_manual_effective($layout,$total);
  $source=__DIR__.'/../excel-files/reference/GENSTAT_BASE.xlsx';
  $zip=zip_read($source);
  if(hash_file('sha256',$source)!==$layout['sha256'])throw new RuntimeException('The reference workbook changed. Reload before exporting.');

@@ -61,6 +61,9 @@ try{
  }elseif($action==='disable'){
   if(($body['confirmed']??false)!==true)throw new QuerySettingsError('Confirm disabling this configuration.');
   $out=['record'=>qs_disable_configuration($l,(string)($body['rowKey']??''),(int)($body['mappingRevision']??-1)),'message'=>'Configuration disabled. Its SQL and history were retained; report values were not changed.'];unset($_SESSION['queryTest']);
+  $scope=base_report_scope($l);
+  if(isset($_SESSION['baseSqlManualTargets'][$scope]))
+   $_SESSION['baseSqlManualTargets'][$scope]=array_filter($_SESSION['baseSqlManualTargets'][$scope],fn($source)=>$source!==$body['rowKey']);
  }elseif(in_array($action,['apply','recover'],true)){
   $values=$body['values']??[];$formulas=$body['formulas']??[];$replacements=$body['sqlReplacements']??[];base_report_validate($l,$values,$formulas);sql_replacement_validate($l,$replacements,$formulas);
   // Same lock as Save Draft. No draft file is replaced by Apply & Save.
@@ -103,17 +106,36 @@ try{
       throw new QuerySettingsError('The report preview changed. Reload the reporting period.');
      if(sql_replacement_row_approved($l,$key))$total=array_column($matched['changes'],'value','ref');
      // Validate the entire working result before touching configuration/history.
-     $calculation=base_report_calculate($l,$values+$preview,$formulas,$replacements,$total);$record=qs_save($l,$config,$expectedRevision,$db);
+     $fresh=array_column($matched['changes'],'value','ref');
+     $working=$l;
+     $working['sqlManualState']=base_sql_manual_state($l);
+     foreach($fresh as $ref=>$value)$working['sqlManualState']['latest'][$ref]=['value'=>$value,'source'=>$key];
+     $working['sqlManualTargets']=array_fill_keys(array_keys($fresh),$key)+($_SESSION['baseSqlManualTargets'][base_report_scope($l)]??[]);
+     $calculation=base_report_calculate($working,$values+$preview,$formulas,$replacements,$total);$record=qs_save($l,$config,$expectedRevision,$db);
      $out=['operationId'=>$operationId,'month'=>$month,'record'=>$record,'values'=>(object)$values,'formulas'=>(object)$formulas,'sqlReplacements'=>(object)$replacements,'sqlSources'=>(object)$sqlSources,'calculation'=>$calculation,
       'previewContext'=>['sqlTargets'=>(object)qs_enabled_value_targets($l,array_replace($records,[$key=>$record])),'preview'=>(object)$preview,'total'=>(object)$total,'previewToken'=>qs_period_preview_token($l,$preview,$total)],
       'draftPending'=>true,'message'=>'Configuration saved and report updated. Use Save Draft to keep the applied values across sessions.'];
      $owner=qs_owner_hash($l);$source=$l['sha256'];$revision=(int)$draft['revision'];$outputHash=qs_overlay_hash($values,$formulas,$replacements);$baselineHash=qs_overlay_hash($draft['values']??[],$draft['formulas']??[],(array)($draft['sqlReplacements']??[]));$configHash=qs_config_hash($config);$recordHash=qs_stable_hash($record);$json=json_encode($out,JSON_THROW_ON_ERROR);$now=gmdate('Y-m-d H:i:s');
      $stmt=$db->prepare('INSERT INTO genstat_query_apply_operations(operation_id,owner_hash,template_row_key,source_hash,draft_revision,input_hash,output_hash,baseline_hash,config_hash,record_hash,area_hash,response_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)');$stmt->bind_param('ssssissssssss',$operationId,$owner,$key,$source,$revision,$overlayHash,$outputHash,$baselineHash,$configHash,$recordHash,$areaHash,$json,$now);$stmt->execute();$db->commit();
+     $_SESSION['baseSqlManualTargets'][base_report_scope($l)]=$working['sqlManualTargets'];
+     $out+=base_sql_manual_public($l,base_sql_manual_cache($l,$fresh,array_fill_keys(array_keys($fresh),$key)));
      foreach($replacements as $ref=>$replacement){$_SESSION['sqlReplacementGrants'][$replacement['signature']]=true;unset($_SESSION['baseUnlocked'][base_report_scope($l)][$ref]);}unset($_SESSION['queryTest']);
     }
    }catch(Throwable $e){try{$db->rollback();}catch(Throwable $ignored){}error_log('GENSTAT Apply & Save could not be confirmed; operation '.(preg_match('/^[a-f0-9]{48}$/D',$operationId)?$operationId:'invalid').'; '.get_class($e));throw $e;}finally{$db->close();}
   }
  }else throw new QuerySettingsError('Unknown SQL settings operation.');
+ if(in_array($action,['apply','recover'],true)){
+  if($out['recovered']??false){
+   $context=$out['previewContext']??[];
+   $scope=base_report_scope($l);
+   $coopTargets=array_filter($_SESSION['baseSqlManualTargets'][$scope]??[],fn($source)=>$source==='coop-registered-accounts');
+   $l['sqlManualTargets']=$coopTargets+(array)($context['sqlTargets']??[]);
+   $_SESSION['baseSqlManualTargets'][$scope]=$l['sqlManualTargets'];
+   $out['calculation']=base_report_calculate($l,(array)$out['values']+(array)($context['preview']??[]),
+    (array)$out['formulas'],(array)$out['sqlReplacements'],(array)($context['total']??[]));
+  }
+  $out+=base_sql_manual_public($l);
+ }
  if($action==='apply'&&!($out['recovered']??false))settings_audit('configuration_changed','reporting:'.$key);
  if($action==='disable')settings_audit('configuration_changed','reporting:'.$body['rowKey']);
  echo json_encode($out,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);

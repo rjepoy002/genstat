@@ -79,7 +79,7 @@ async function checkGridKeys(browser,url){
   assert.equal(await active(),'P39');
   await grid.locator('td[data-ref="Q24"]').press('Enter');
   assert(await grid.locator('#formula').evaluate(el=>el.readOnly));
-  assert(await input('B18').evaluate(el=>el.readOnly));
+  assert.equal(await input('B18').evaluate(el=>el.readOnly),!await grid.locator('td[data-ref="B18"][data-sql-applied]').count());
   await input('B18').press('Enter');
   assert.equal(calculations.length,5,'Protected cells never submit edits');
   assert.equal(grid.url(),url);
@@ -187,7 +187,8 @@ async function checkGridKeys(browser,url){
    assert.equal((await denied.json()).error,error);
   }
   assert.equal(await page.locator('#genstat-report-table tbody tr').count(),38);
-  assert.equal(await page.locator('td input').count(),96);
+  assert.equal(await page.locator('td input:not([data-sql-input])').count(),96);
+  assert.equal(await page.locator('td:not([data-sql-applied]) input[data-sql-input]').count(),0);
   assert.equal(await page.locator('[data-classification="database_input"]').count(),96);
   assert.equal(await page.locator('[data-classification="formula"]').count(),311);
   assert.equal(await page.locator('[data-ref="T8"]').count(),0);
@@ -333,7 +334,7 @@ async function checkGridKeys(browser,url){
   const numeric=refCell(numericRef);
   if(numericRef!=='F18'){
    await refCell('F18').focus();
-   assert(await formulaBar.evaluate(input=>input.readOnly));
+   assert.equal(await formulaBar.evaluate(input=>input.readOnly),!await refCell('F18').getAttribute('data-sql-applied'));
   }
   await numeric.press('1');
   assert.equal(await formulaBar.inputValue(),'1');

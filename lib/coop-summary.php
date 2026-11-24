@@ -57,9 +57,9 @@ function coop_summary_values(array $targets,array $accounts,array $previous,arra
 function base_report_sql(array $layout,bool $onlyTotal=false,bool $strict=false): array {
  $report=qs_period_preview($layout,$onlyTotal,$strict);
  $scope=base_report_scope($layout);
- $entry=$_SESSION['coopSummary'][$scope]??[];
+ $entry=base_sql_manual_state($layout)['coopHistory']??$_SESSION['coopSummary'][$scope]??[];
  $cached=$entry['values']??[];
- $values=$cached;$warning=null;
+ $values=$cached;$warning=null;$fresh=[];$history=null;
  try{
   $targets=$layout['coopAreaTargets']??coop_summary_targets($layout);
   if(!$targets)throw new DomainException('COOP summary area mapping requires review.');
@@ -77,18 +77,26 @@ function base_report_sql(array $layout,bool $onlyTotal=false,bool $strict=false)
   }
   if(($entry['source']??null)!==$source){$cached=[];$entry=[];}
   [$values,$incomplete,$numbers]=coop_summary_values($targets,$accounts,$cached,$entry['numbers']??[]);
+  $fresh=array_diff_key($values,array_fill_keys($incomplete,true));
   if($billingFailed){
    $warning='COOP sync failed. Check the connection and billing source.';
    if($incomplete)$warning.=' Incomplete totals for '.implode(', ',$incomplete).'.';
    $warning.=' Last valid values are used where available.';
-   if(!$accounts)$values=$cached;
+   if(!$accounts){$values=$cached;$fresh=[];}
   }elseif($incomplete)$warning='COOP sync incomplete for '.implode(', ',$incomplete).'. Check account and billing statuses. Last valid values are used where available.';
-  $_SESSION['coopSummary'][$scope]=['values'=>$values,'numbers'=>$numbers,'source'=>$source];
+  // Preserve the last validated account set across browser sessions. The
+  // existing eligibility rules still exclude deactivated or replaced accounts.
+  $history=['values'=>$values,'numbers'=>$numbers,'source'=>$source];
+  if(!$accounts&&$billingFailed)$history=$entry;
+  $_SESSION['coopSummary'][$scope]=$history;
  }catch(Throwable){
   $warning='COOP sync failed. Check the connection, registry, and report mapping. Last valid values are used where available.';
  }
  $available=array_filter($values,fn($value)=>$value!==null);
  $report['total']=$available+$report['total'];
  $report['sqlTargets']=array_fill_keys(array_keys($available),'coop-registered-accounts')+$report['sqlTargets'];
+ base_sql_manual_cache($layout,$fresh+$report['total']+$report['values'],
+  array_diff_key($report['sqlTargets'],array_fill_keys(array_keys($available),true))+
+  array_fill_keys(array_keys($fresh),'coop-registered-accounts'),$history);
  return $report+['coopSyncWarning'=>$warning];
 }

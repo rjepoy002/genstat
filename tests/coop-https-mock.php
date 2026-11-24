@@ -34,6 +34,7 @@ function coop_https_request(array $connection, ?array $body = null): array
             '70-0550-0750' => ['RX2018780000305','Fixture Cagayancillo','ok',$month === '202607' ? '40.00' : '8.00'],
             'HTTP-MISSING' => [null,null,'account_not_found',null],
             'HTTP-ZERO' => ['00009','Fixture Zero','ok','0.000'],
+            'HTTP-EXTRA' => ['00011','Fixture Extra','ok','2.00'],
             'HTTP-NO-BILL' => ['00010','Fixture No Bill','no_billing_record',null],
             default => [null,null,'no_active_account',null],
         };

@@ -78,6 +78,8 @@ td[data-classification="database_input"]{background:#edf8fc!important}
 td:focus,th:focus,td.selected,th.selected{outline:2px solid #078b89;outline-offset:-2px}
 footer{padding:3px 12px;color:#526b80;font-size:10px;flex-shrink:0}.error{color:#a32a20}
 td[data-sql-applied="true"]{background:#e7f5f1!important}td[data-sql-applied="true"] .value::before{content:'SQL ';font-size:8px;color:#087565}.formula-bar{flex-wrap:wrap}.report-formula-field{min-width:100px}
+#genstat-report-table td[data-sql-manual="true"]{background:#fffbeb!important}
+#genstat-report-table td[data-sql-manual="true"] .value::before{content:'MAN ';font-size:8px;color:#b45309}
 
 @media(max-width:700px){header{gap:6px;padding:5px 8px}header>span{font-size:10px}header a{font-size:10px}.formula-bar{gap:5px;padding:3px 6px}.formula-bar output{min-width:45px}.formula-bar button{padding:5px}.report-notice{font-size:11px;padding-inline:6px}.report-scroll{margin:2px 4px}table{font-size:12px}tr{height:25px}.spacer-row{height:5px}th,td{line-height:17px}footer{padding:3px 6px}}
 
@@ -121,6 +123,12 @@ html.dark #genstat-report-table td[style*="#ccc1da" i]{--gs-cell-bg:var(--gs-los
 :is(html.dark #genstat-report-table,.appearance-preview[data-theme="dark"]) td[data-sql-applied="true"] .value::before{
  color:var(--gs-sql-text);font-weight:500;letter-spacing:.025em
 }
+#report-confirmation-detail{white-space:pre-line}
+html.dark #genstat-report-table td[data-sql-manual="true"]{
+ --gs-cell-bg:color-mix(in srgb,#451a03 30%,var(--gs-surface));
+ background:var(--gs-cell-bg)!important
+}
+html.dark #genstat-report-table td[data-sql-manual="true"] .value::before{color:#fbbf24;font-weight:500;letter-spacing:.025em}
 :is(html.dark #genstat-report-table,.appearance-preview[data-theme="dark"]) tr[data-row-selected]:not(.total-row)>td:not(.particulars,.total-column,.selected,[data-sql-applied="true"],[data-classification="database_input"],[style*="background-color"]){
  background:color-mix(in srgb,var(--gs-cell-bg,var(--gs-surface)) 88%,var(--gs-selection))!important
 }
