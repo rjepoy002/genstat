@@ -8,6 +8,7 @@
   <button id="settings-reporting-tab" type="button" aria-controls="settings-reporting" aria-pressed="true">Reporting Configuration</button>
   <button id="settings-coop-tab" type="button" aria-controls="settings-coop" aria-pressed="false">COOP Consumption</button>
   <button id="settings-appearance-tab" type="button" aria-controls="settings-appearance" aria-pressed="false">Appearance</button>
+  <button id="settings-security-tab" type="button" aria-controls="settings-security" aria-pressed="false">Security</button>
  </nav>
  </div>
  <div id="settings-reporting" class="space-y-4 p-4 sm:p-5">
@@ -67,6 +68,14 @@
  </div>
  <?php require __DIR__.'/coop-phase1.php';?>
  <?php require __DIR__.'/report-appearance.php';?>
+ <section id="settings-security" class="p-4 sm:p-5" aria-labelledby="settings-security-title" hidden>
+  <div class="sql-card space-y-3">
+   <h3 id="settings-security-title" class="sql-card-title">Security</h3>
+   <p class="m-0">Settings Protection: <strong>Enabled</strong></p>
+   <p class="m-0">Security PIN: <span aria-label="Masked">••••••</span></p>
+   <button id="settings-pin-change-open" type="button">Change PIN</button>
+  </div>
+ </section>
 </dialog>
 
 <dialog id="sql-apply-loading" class="report-loading-card rounded-2xl text-center shadow-2xl" aria-labelledby="sql-loading-title">

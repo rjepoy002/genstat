@@ -442,7 +442,7 @@
   return pending;
  }
  coopResync.addEventListener('click',refreshCoop);
- window.genstatReport={confirmAction,refreshRecoveredSales,refreshCoop,notifyRecoveredSalesSaved:()=>notifyReport('Recovered Sales saved and GENSTAT summary updated successfully.'),snapshot:()=>({month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,values:structuredClone(data.values),formulas:structuredClone(data.formulas),sqlReplacements:structuredClone(data.sqlReplacements),sqlSources:structuredClone(data.sqlSources)}),
+ window.genstatReport={confirmAction,refreshRecoveredSales,refreshCoop,notifySettings:notifyReport,notifyRecoveredSalesSaved:()=>notifyReport('Recovered Sales saved and GENSTAT summary updated successfully.'),snapshot:()=>({month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,values:structuredClone(data.values),formulas:structuredClone(data.formulas),sqlReplacements:structuredClone(data.sqlReplacements),sqlSources:structuredClone(data.sqlSources)}),
   previewContext:()=>({preview:data.preview,total:data.total,previewToken:data.previewToken}),
   disableSqlLabels(rowKey){setRestoreRecovery(null);
    for(const [ref,key] of Object.entries(data.sqlTargets))if(key===rowKey)delete data.sqlTargets[ref];

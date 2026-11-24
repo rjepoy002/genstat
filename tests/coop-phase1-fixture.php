@@ -24,6 +24,7 @@ if($argv[1]==='setup'){
  $db->query("CREATE USER '$writer'@'127.0.0.1' IDENTIFIED BY '$writerPassword'");
  foreach(['coop_registered_accounts','coop_audit','genstat_query_definitions','genstat_row_query_mappings','genstat_query_history','genstat_query_apply_operations'] as $table)
   $db->query("GRANT SELECT, INSERT, UPDATE, DELETE ON `$database`.`$table` TO '$writer'@'127.0.0.1'");
+ $db->query("GRANT SELECT, INSERT, UPDATE ON `$database`.genstat_settings_security TO '$writer'@'127.0.0.1'");
  $writerConfig=['host'=>'127.0.0.1','port'=>$config['port'],'database'=>$database,'user'=>$writer,'password'=>$writerPassword];
  file_put_contents($directory.'/web/config/query-settings.local.php','<?php $cfg=require '.
   var_export(realpath(__DIR__.'/../config/query-settings.local.php'),true).'; $cfg["writer"]='.var_export($writerConfig,true).';return $cfg;');
@@ -50,10 +51,15 @@ if($argv[1]==='setup'){
  $db->query("GRANT SELECT ON `$database`.slow_accounts TO '$username'@'127.0.0.1'");
  $db->query("GRANT SELECT ON `$database`.master TO '$username'@'127.0.0.1'");
  $db->query("GRANT SELECT ON `$database`.billhistory TO '$username'@'127.0.0.1'");
-}elseif(in_array($argv[1],['seed-pagination','cleanup','billing-off','billing-on','check-export','connection-off','connection-on','seed-inactive','activate-pending','deactivate-pending','require-canonical','allow-pending'],true)&&is_file($path)){
+}elseif(in_array($argv[1],['seed-pagination','cleanup','billing-off','billing-on','check-export','connection-off','connection-on','seed-inactive','activate-pending','deactivate-pending','require-canonical','allow-pending','expire-settings-lockout'],true)&&is_file($path)){
  ['database'=>$database,'username'=>$username]=json_decode(file_get_contents($path),true,32,JSON_THROW_ON_ERROR);
  if(!preg_match('/^coop_fixture_[a-f0-9]{12}$/D',$database)||!preg_match('/^coop_reader_[a-f0-9]{12}$/D',$username))
   throw new RuntimeException('Unsafe COOP fixture cleanup.');
+ if($argv[1]==='expire-settings-lockout'){
+  $db->select_db($database);
+  $db->execute_query('UPDATE genstat_settings_security SET LockedUntil=? WHERE ID=?',[time()-1,1]);
+  exit;
+ }
  if(in_array($argv[1],['require-canonical','allow-pending'],true)){
   $db->select_db($database);
   $db->query($argv[1]==='require-canonical'

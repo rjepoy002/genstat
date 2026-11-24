@@ -24,9 +24,12 @@ const db=action=>execFileSync(php,[path.join(root,'tests/coop-phase1-fixture.php
   for(const file of ['inputs.php','layout.json','monthly-source.php','coop-hosted-endpoints.php'])
    fs.copyFileSync(path.join(root,'config',file),path.join(web,'config',file));
   for(const folder of ['storage','sessions'])fs.mkdirSync(path.join(web,folder));
-  for(const file of ['base-report.php','query-settings-api.php','coop-phase1-api.php'])
+  for(const file of ['base-report.php','query-settings-api.php','coop-phase1-api.php','settings-security-api.php'])
    fs.copyFileSync(path.join(root,file),path.join(web,file));
   db('setup');
+  const fixturePin='085271';
+  const cli=mode=>execFileSync(php,[path.join(web,'tools/settings-pin.php'),mode],
+   {input:fixturePin+'\n'+fixturePin+'\n',windowsHide:true,encoding:'utf8'});
   const settings=JSON.parse(fs.readFileSync(path.join(fixture,'fixture.json')));
   server=spawn(php,['-d','session.save_path=sessions','-S','127.0.0.1:0','-t',web],{
    cwd:web,windowsHide:true,stdio:['ignore','ignore','pipe'],
@@ -55,16 +58,38 @@ const db=action=>execFileSync(php,[path.join(root,'tests/coop-phase1-fixture.php
   const status=message=>page.locator('#coop-status').getByText(message,{exact:true}).waitFor();
   const ready=async()=>{
    await page.locator('#sql-settings-open').click();
+   const pinDialog=page.locator('#settings-pin-dialog');
+   for(const [index,digit] of [...fixturePin].entries())await pinDialog.getByLabel('PIN digit '+(index+1),{exact:true}).fill(digit);
+   await page.locator('#sql-settings-dialog').waitFor();
    await page.locator('#settings-coop-tab').click();
    await page.waitForFunction(()=>!document.getElementById('coop-fields').disabled);
   };
   const api=(action,extra={})=>page.evaluate(async({action,extra})=>{
    const {month,csrf}=window.genstatReport.snapshot();
-   const response=await fetch('coop-phase1-api.php',{method:'POST',headers:{'Content-Type':'application/json'},
+   const response=await fetch('coop-phase1-api.php',{method:'POST',headers:window.genstatSettings.headers(),
     body:JSON.stringify({month,csrf,action,...extra})});
    return {status:response.status,data:await response.json()};
   },{action,extra});
+  const security=async(action,extra={})=>page.evaluate(async ({action,extra})=>{
+   const {month,csrf}=window.genstatReport.snapshot();
+   const response=await fetch('settings-security-api.php',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action,month,csrf,...extra})});
+   return {status:response.status,data:await response.json()};
+  },{action,extra});
+  assert.equal((await api('metadata')).status,403);
+  assert.equal((await security('state')).data.configured,false);
+  assert.equal((await security('verify',{pin:'12345A'})).status,400);
+  assert.match(cli('setup'),/configured/);
   await ready();
+  await page.locator('#settings-reporting-tab').click();
+  await page.locator('#sql-row-trigger').click();
+  const reportOptions=page.locator('#sql-row-options').getByRole('option');
+  assert.equal(await reportOptions.count(),5);
+  assert((await reportOptions.allTextContents()).every(text=>text.endsWith(' / Not Configured')));
+  assert(!(await reportOptions.allTextContents()).some(text=>/coop consumption/i.test(text)));
+  assert.deepEqual(await page.locator('#sql-row option').evaluateAll(options=>options.map(option=>option.value)),
+   [11,18,24,25,39].map(row=>'genstat-base/Jul26/A'+row));
+  await page.locator('#settings-coop-tab').click();
   assert.equal(await field('host').inputValue(),'127.0.0.1');
   assert.equal(await field('username').inputValue(),'root');
   const rootConnection={...settings,username:'root',password:'',emptyPassword:true};
@@ -124,8 +149,11 @@ const db=action=>execFileSync(php,[path.join(root,'tests/coop-phase1-fixture.php
    await page.getByRole('button',{name:'Resync COOP'}).click();
    await page.locator('#coop-sync-status').getByText(/COOP sync failed/).waitFor();
    assert.equal(await coopCell('C26').locator('.value').textContent(),'12.35');
+   assert.equal((await api('accounts-list')).status,403);
+   await ready();
    const unavailable=(await api('accounts-list')).data.rows.find(row=>row.AcctCode==='001');
    assert.deepEqual([unavailable.kwh,unavailable.status],[null,'Unable to retrieve data']);
+   await page.locator('#sql-settings-close').click();
   }finally{db('billing-on');}
   await page.getByRole('button',{name:'Resync COOP'}).click();
   await page.waitForFunction(()=>!document.querySelector('#coop-resync').disabled&&document.querySelector('#coop-sync-status').textContent==='');
@@ -408,6 +436,7 @@ const db=action=>execFileSync(php,[path.join(root,'tests/coop-phase1-fixture.php
   assert(!fs.readFileSync(secret,'utf8').includes(https.apiKey));
   assert.equal((await api('test-query',{query:'SELECT 1'})).status,400);
   await accountRow(pendingCode).getByRole('cell',{name:'8.00',exact:true}).waitFor();
+  await coopCell('M26').locator('.value').getByText('8.00',{exact:true}).waitFor();
   const hostedPending=(await registry()).rows.find(row=>row.AcctCode===pendingCode);
   assert.deepEqual([hostedPending.ID,hostedPending.AcctNo,hostedPending.GenstatAreaID],[pending.ID,'RX2018780000305',cagayancillo]);
   assert.equal((await api('accounts-add',{code:'03-0152-0325',area:firstArea})).status,200);
@@ -420,6 +449,9 @@ const db=action=>execFileSync(php,[path.join(root,'tests/coop-phase1-fixture.php
   await page.locator('#sql-settings-close').click();
   await page.locator('#report-month').selectOption('202607');
   await page.waitForFunction(()=>window.genstatReport.snapshot().month==='202607');
+  await coopCell('M26').locator('.value').getByText('40.00',{exact:true}).waitFor();
+  await coopCell('C26').locator('.value').getByText(/^1,?407\.00$/).waitFor();
+  assert.match(await coopCell('M26').getAttribute('title'),/SQL-controlled COOP Consumption/);
   await ready();
   await accountRow(pendingCode).getByRole('cell',{name:'40.00',exact:true}).waitFor();
   await accountRow('03-0152-0325').getByRole('cell',{name:'1407.00',exact:true}).waitFor();
@@ -446,6 +478,99 @@ const db=action=>execFileSync(php,[path.join(root,'tests/coop-phase1-fixture.php
   assert.equal(restored.queryReady,true);
   assert.equal(restored.profiles.https.hasApiKey,true);
   assert(!serverLog.includes(https.apiKey));
+  await page.locator('#sql-settings-close').click();
+  assert.equal((await api('metadata')).status,403);
+  const sqlStatus=await page.evaluate(async()=>{
+   const response=await fetch('query-settings-api.php',{method:'POST',headers:window.genstatSettings.headers(),
+    body:JSON.stringify({...window.genstatReport.snapshot(),action:'metadata'})});
+   return response.status;
+  });
+  assert.equal(sqlStatus,403);
+  assert.equal((await security('appearance')).status,403);
+  const pinDialog=page.locator('#settings-pin-dialog'),firstDigit=pinDialog.getByLabel('PIN digit 1',{exact:true});
+  await page.locator('#sql-settings-open').click();
+  await firstDigit.press('A');
+  assert.equal(await firstDigit.inputValue(),'');
+  await firstDigit.press('0');
+  await pinDialog.getByLabel('PIN digit 2',{exact:true}).press('ArrowLeft');
+  assert.equal(await firstDigit.evaluate(input=>document.activeElement===input),true);
+  const paste=value=>firstDigit.evaluate((input,value)=>{
+   const clipboardData=new DataTransfer();clipboardData.setData('text',value);
+   input.dispatchEvent(new ClipboardEvent('paste',{clipboardData,bubbles:true,cancelable:true}));
+  },value);
+  await paste('NOTPIN');
+  assert.equal(await firstDigit.inputValue(),'0');
+  await paste('001739');
+  await pinDialog.getByText(/Incorrect security PIN.*Remaining attempts: 4/).waitFor();
+  assert.equal(await firstDigit.inputValue(),'');
+  for(let count=3;count>=0;count--){
+   const failed=await security('verify',{pin:'001739'});
+   assert.equal(failed.status,count?401:429);
+   assert.equal(failed.data.remaining,count);
+   if(!count)assert.equal(failed.data.lockedFor,300);
+  }
+  await page.reload();await page.locator('#sql-settings-open').click();
+  await pinDialog.getByText(/Too many attempts. Try again in/).waitFor();
+  assert(await firstDigit.isDisabled());
+  assert.equal((await security('verify',{pin:fixturePin})).status,429);
+  db('expire-settings-lockout');
+  await pinDialog.press('Escape');
+  await page.locator('#sql-settings-open').click();
+  await firstDigit.waitFor();
+  let verificationRequests=0;
+  page.on('request',request=>{
+   if(request.url().endsWith('/settings-security-api.php')&&request.postDataJSON().action==='verify')verificationRequests++;
+  });
+  await firstDigit.fill('0');
+  await paste(fixturePin);
+  await page.locator('#sql-settings-dialog').waitFor();
+  assert.equal(verificationRequests,1);
+  const context=await browser.newContext(),second=await context.newPage();
+  await second.goto(url);
+  const secondGrant=await second.evaluate(async pin=>{
+   const {month,csrf}=window.genstatReport.snapshot();
+   const response=await fetch('settings-security-api.php',{method:'POST',body:JSON.stringify({action:'verify',pin,month,csrf})});
+   return response.json();
+  },fixturePin);
+  assert(secondGrant.token);
+  await page.locator('#settings-security-tab').click();
+  await page.getByRole('button',{name:'Change PIN',exact:true}).click();
+  const change=page.getByRole('dialog',{name:'Change PIN'});
+  await change.getByLabel('Current PIN',{exact:true}).fill(fixturePin);
+  const replacementPin='073586';
+  await change.getByLabel('New PIN',{exact:true}).fill(replacementPin);
+  await change.getByLabel('Confirm New PIN',{exact:true}).fill(replacementPin);
+  await change.getByRole('button',{name:'Save Changes'}).click();
+  await page.locator('#report-confirmation').getByRole('button',{name:'Continue'}).click();
+  await page.getByText('Security PIN changed successfully.',{exact:true}).waitFor();
+  assert.equal((await security('verify',{pin:fixturePin})).status,401);
+  assert.equal((await security('verify',{pin:replacementPin})).status,200);
+  assert.equal(await second.evaluate(async authorization=>{
+   const {month,csrf}=window.genstatReport.snapshot();
+   return (await fetch('settings-security-api.php',{method:'POST',body:JSON.stringify({action:'status',authorization,month,csrf})})).status;
+  },secondGrant.token),403);
+  await context.close();
+  await page.locator('#sql-settings-open').click();
+  await firstDigit.fill('0');
+  await paste(replacementPin);
+  await page.locator('#sql-settings-dialog').waitFor();
+  const session=(await page.context().cookies()).find(cookie=>cookie.name==='PHPSESSID');
+  assert.match(session.value,/^[a-zA-Z0-9,-]+$/);
+  const expireScript=path.join(web,'expire-settings-session.php');
+  fs.writeFileSync(expireScript,`<?php
+if(PHP_SAPI!=='cli')exit;
+session_save_path(__DIR__.'/sessions');
+session_id($argv[1]);
+session_start();
+if(!isset($_SESSION['settingsAuthorization']))exit(1);
+$_SESSION['settingsAuthorization']['expires']=1;
+session_write_close();
+`);
+  execFileSync(php,[expireScript,session.value],{windowsHide:true});
+  await page.getByText('Settings have been locked for security.',{exact:true}).waitFor();
+  assert(!await page.locator('#sql-settings-dialog').isVisible());
+  assert.match(cli('reset'),/PIN reset/);
+  assert(!serverLog.includes(fixturePin)&&!serverLog.includes(replacementPin));
   assert.deepEqual(errors,[]);
   console.log('Verified direct MariaDB and mocked HTTPS COOP settings, registration, July/August billing, summary preservation, and light/dark UI.');
  }finally{

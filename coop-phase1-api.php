@@ -3,9 +3,9 @@ declare(strict_types=1);
 ini_set('display_errors','0');
 require_once __DIR__.'/lib/coop-phase1.php';
 require_once __DIR__.'/lib/coop-registered-accounts.php';
+require_once __DIR__.'/lib/settings-security.php';
 
-session_set_cookie_params(['httponly'=>true,'samesite'=>'Strict']);
-session_start();
+settings_session_start();
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
@@ -18,6 +18,7 @@ try{
  $month=$body['month']??null;
  if(empty($_SESSION['baseCsrf'])||!base_report_valid_month($month)||!is_string($body['csrf']??null)||
    !hash_equals(base_report_csrf($month),$body['csrf']))throw new DomainException('Session expired. Reload the report.',403);
+ settings_require_authorized($_SERVER['HTTP_X_SETTINGS_AUTHORIZATION']??null);
  qs_select_month(qs_available_months(),$month);
  $action=$body['action']??null;
  $registryAction=in_array($action,['accounts-list','accounts-add','accounts-transfer','accounts-remove'],true);
@@ -102,8 +103,11 @@ try{
    }
   }
  }else throw new DomainException('Unknown COOP settings action.');
+ if(in_array($action,['save-connection','save-query','accounts-add','accounts-transfer','accounts-remove'],true))
+  settings_audit('configuration_changed','coop:'.$action);
  echo json_encode($result,JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
-}catch(DomainException|QuerySettingsError $e){
+}catch(SettingsSecurityError $e){http_response_code($e->getCode());echo json_encode(['error'=>$e->getMessage()]);}
+catch(DomainException|QuerySettingsError $e){
  $status=$e->getCode();
  http_response_code(in_array($status,[403,409,503],true)?$status:400);
  echo json_encode(['error'=>$e->getMessage()],JSON_INVALID_UTF8_SUBSTITUTE);

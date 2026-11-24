@@ -11,7 +11,10 @@ if($action==='setup'){
  $db->query("CREATE DATABASE `$schema` CHARACTER SET utf8mb4");$db->select_db($schema);
  foreach(explode(';',file_get_contents(__DIR__.'/../migrations/001-query-settings.sql')) as $sql)if(trim($sql))$db->query($sql);
  foreach(['002-row-formula-replacement.sql','003-query-calculation-settings.sql','004-query-apply-operations.sql'] as $migration)$db->query(file_get_contents(__DIR__.'/../migrations/'.$migration));
+ $db->query(file_get_contents(__DIR__.'/../migrations/007-settings-security.sql'));
+ $db->execute_query('INSERT INTO genstat_settings_security (ID,PINHash) VALUES (?,?)',[1,password_hash('085271',PASSWORD_DEFAULT)]);
  $db->query("CREATE USER '$user'@'127.0.0.1' IDENTIFIED BY '$password'");foreach(['genstat_query_definitions','genstat_row_query_mappings','genstat_query_history'] as $table)$db->query("GRANT SELECT, INSERT, UPDATE ON `$schema`.`$table` TO '$user'@'127.0.0.1'");$db->query("GRANT SELECT, INSERT ON `$schema`.`genstat_query_apply_operations` TO '$user'@'127.0.0.1'");
+ $db->query("GRANT SELECT, UPDATE ON `$schema`.genstat_settings_security TO '$user'@'127.0.0.1'");
  $cfg=require __DIR__.'/../config/query-settings.local.php';$cfg['writer']=['host'=>'127.0.0.1','port'=>$c['port'],'database'=>$schema,'user'=>$user,'password'=>$password];if(!is_dir($root.'/config'))mkdir($root.'/config');file_put_contents($root.'/config/query-settings.local.php',"<?php\nreturn ".var_export($cfg,true).";\n");
  $ids=[1,8,9,10,12,2,5,15,4,3,6,19,16,18,11];$bindings=[];foreach($ids as $i=>$id)$bindings[chr(66+$i).'11']=['areaId'=>(string)$id,'sacode'=>''];
  $sql='WITH params AS (SELECT :ReportMonth AS ReportMonth) SELECT AreaID, AreaName, 1200838.00 + CAST(RIGHT((SELECT ReportMonth FROM params),2) AS UNSIGNED) - 7 AS Sales_KWH, 455.00 AS KWH_Diff, 36.00 AS Total_Cancelled_KWH, 1201293.00 AS TotalKWhSold FROM area_master WHERE AreaID IN ('.implode(',',$ids).')';$queryKey='legacy_existing';$now='2026-01-01 00:00:00';

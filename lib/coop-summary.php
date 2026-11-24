@@ -6,13 +6,9 @@ require_once __DIR__.'/coop-registered-accounts.php';
 
 function coop_summary_targets(array $layout): array {
  $sheet=$layout['sheets'][0];
- $row=null;
- foreach(qs_rows($layout) as $definition)
-  if(report_area_name(preg_replace('/^[a-z]\.\)\s*/i','',$definition['label']))==='coop consumption'){
-   if($row!==null)throw new DomainException('COOP summary row mapping requires review.');
-   $row=$definition;
-  }
- if(!$row)throw new DomainException('COOP summary row mapping requires review.');
+ $row=qs_area_input_rows($layout)[QS_COOP_ROW_KEY]??null;
+ if(!$row||report_area_name(preg_replace('/^[a-z]\.\)\s*/i','',$row['label']))!=='coop consumption')
+  throw new DomainException('COOP summary row mapping requires review.');
  // The labels guard the reference workbook. Allocation uses only the AreaIDs.
  $bindings=[
   'B'=>['main',[1]],'C'=>['aborlan',[7,8]],'D'=>['narra',[9]],'E'=>['quezon',[10]],

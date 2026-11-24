@@ -4,7 +4,9 @@ require_once __DIR__.'/lib/query-settings.php';
 require_once __DIR__.'/lib/files.php';
 require_once __DIR__.'/lib/coop-summary.php';
 require_once __DIR__.'/lib/base-report-view.php';
-session_set_cookie_params(['httponly'=>true,'samesite'=>'Strict']);session_start();$_SESSION['baseCsrf']??=bin2hex(random_bytes(32));
+require_once __DIR__.'/lib/settings-security.php';
+settings_session_start();$_SESSION['baseCsrf']??=bin2hex(random_bytes(32));
+if($_SERVER['REQUEST_METHOD']==='GET')settings_revoke();
 function bh($v): string{return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8');}
 try{
  $post=$_SERVER['REQUEST_METHOD']==='POST';
@@ -236,6 +238,8 @@ $headingText=$fullHeading?implode("\n",array_column($areaHeaders[$c]['fragments'
  </div>
 </div>
 <?php require __DIR__.'/partials/sql-settings.php';?>
+<?php require __DIR__.'/partials/settings-security.php';?>
+<script defer src="assets/settings-security.js"></script>
 <?php require __DIR__.'/partials/recovered-sales.php'; ?>
 <dialog id="report-confirmation" class="fixed inset-0 m-auto w-[min(460px,92vw)] rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl backdrop:bg-black/60 dark:border-gs-border dark:bg-gs-surface dark:text-gs-text" aria-labelledby="report-confirmation-title" aria-describedby="report-confirmation-message report-confirmation-warning report-confirmation-detail">
  <form method="dialog">

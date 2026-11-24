@@ -27,8 +27,9 @@
  }
  async function request(action,extra={}){
   const {month,csrf}=report.snapshot();
-  const response=await fetch('coop-phase1-api.php',{method:'POST',headers:{'Content-Type':'application/json'},
+  const response=await fetch('coop-phase1-api.php',{method:'POST',headers:window.genstatSettings.headers(),
    body:JSON.stringify({action,month,csrf,...extra})});
+  window.genstatSettings.onResponse(response);
   const result=await response.json();
   if(!response.ok)throw Error(result.error||'The COOP request failed.');
   return result;

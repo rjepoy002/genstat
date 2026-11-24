@@ -7,7 +7,7 @@ const productionDrafts=()=>Object.fromEntries(fs.readdirSync('storage').filter(n
 const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php',action,root,...args],{encoding:'utf8'}),stats=()=>JSON.parse(fixture('stats'));
 (async()=>{let browser,server,setup=false,serverLog='';
  try{
-  for(const dir of ['lib','tools'])fs.cpSync(path.resolve(dir),path.join(root,dir),{recursive:true});for(const dir of ['assets','partials','excel-files','node_modules'])fs.symlinkSync(path.resolve(dir),path.join(root,dir),'junction');fs.mkdirSync(path.join(root,'storage','sessions'),{recursive:true});for(const name of ['base-report.php','query-settings-api.php'])fs.writeFileSync(path.join(root,name),fs.readFileSync(path.resolve(name),'utf8').replace('declare(strict_types=1);',"declare(strict_types=1);\nini_set('session.save_path', __DIR__.'/storage/sessions');"));
+  for(const dir of ['lib','tools'])fs.cpSync(path.resolve(dir),path.join(root,dir),{recursive:true});for(const dir of ['assets','partials','excel-files','node_modules'])fs.symlinkSync(path.resolve(dir),path.join(root,dir),'junction');fs.mkdirSync(path.join(root,'storage','sessions'),{recursive:true});for(const name of ['base-report.php','query-settings-api.php','settings-security-api.php'])fs.writeFileSync(path.join(root,name),fs.readFileSync(path.resolve(name),'utf8').replace('declare(strict_types=1);',"declare(strict_types=1);\nini_set('session.save_path', __DIR__.'/storage/sessions');"));
   process.stdout.write(fixture('setup'));setup=true;fs.copyFileSync(path.resolve('config/inputs.php'),path.join(root,'config','inputs.php'));process.stdout.write(fixture('service-tests'));
   // Exercise a second year without adding periods to the live reporting table.
   const reportingLibrary=path.join(root,'lib/query-settings.php');
@@ -25,9 +25,28 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
    await page.waitForFunction(()=>!document.querySelector('#sql-settings-dialog').hasAttribute('aria-busy'));
    await page.evaluate(()=>window.genstatReport.ready());
   };
-  const api=(action,extra={},target=page)=>target.evaluate(async({action,extra})=>{const r=await fetch('query-settings-api.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...window.genstatReport.snapshot(),action,...extra})});return {status:r.status,data:await r.json()};},{action,extra});
+  const api=(action,extra={},target=page)=>target.evaluate(async({action,extra})=>{
+   const headers=window.genstatSettings.headers(),snapshot=window.genstatReport.snapshot();
+   if(!headers['X-Settings-Authorization']){
+    if(!window.fixtureAuthorization){
+     const verified=await fetch('settings-security-api.php',{method:'POST',headers,
+      body:JSON.stringify({action:'verify',pin:'085271',month:snapshot.month,csrf:snapshot.csrf})});
+     window.fixtureAuthorization=(await verified.json()).token;
+    }
+    headers['X-Settings-Authorization']=window.fixtureAuthorization;
+   }
+   const r=await fetch('query-settings-api.php',{method:'POST',headers,body:JSON.stringify({...snapshot,action,...extra})});
+   return {status:r.status,data:await r.json()};
+  },{action,extra});
   const editor=()=>page.evaluate(()=>{const $=id=>document.getElementById(id),bindings={},mappingSources={};for(const s of $('sql-bindings').querySelectorAll('select')){bindings[s.dataset.ref]={areaId:s.value,sacode:s.parentElement.querySelector('input').value};mappingSources[s.dataset.ref]=s.dataset.source;}return {rowKey:$('sql-row').value,sql:$('sql-editor').value,areaColumn:$('sql-area-column').value,valueColumn:$('sql-value-column').value,sacodeColumn:$('sql-sacode-column').value,bindings,excluded:$('sql-excluded').value.split(',').map(x=>x.trim()).filter(Boolean),autoMatchColumn:$('sql-auto-column').value,matchingMethod:$('sql-match-method').value,mappingSources,formulaTarget:'total_kwh_sold',formulaEnabled:$('sql-formula-enabled').checked,formulaExpression:$('sql-calculation').value};});
-  const open=async()=>{await page.locator('#sql-settings-open').click();await page.waitForFunction(()=>document.querySelector('#sql-row option'));await idle();};
+  const enterSettings=async(target=page)=>{
+   await target.locator('#sql-settings-open').click();
+   const inputs=target.locator('#settings-pin-inputs input');
+   for(const [index,digit] of [...'085271'].entries())await inputs.nth(index).fill(digit);
+   await target.locator('#sql-settings-dialog').waitFor();
+   await target.waitForFunction(()=>document.querySelector('#sql-row option'));
+  };
+  const open=async()=>{await enterSettings();await idle();};
   const test=async()=>{
    const pending=page.waitForResponse(r=>r.url().endsWith('query-settings-api.php')&&r.request().postDataJSON().action==='test');
    await page.locator('#sql-test').click();const response=await pending;await idle();
@@ -57,7 +76,8 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert(years.includes('2026')&&years.includes('2027'));
   assert.equal((await page.request.get(reportUrl+'?month=202613')).status(),400);
   assert.equal((await page.request.get(reportUrl+'?month=999912')).status(),400);
-  const august=await context.newPage();
+  const augustContext=await browser.newContext();
+  const august=await augustContext.newPage();
   await august.goto(augustUrl);
   await august.goto(reportUrl);
   assert.equal(await august.locator('#report-month').inputValue(),'202608');
@@ -134,9 +154,9 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await page.locator('#sql-apply').click();await idle();assert(lost);assert.equal(applyRequests,1);assert.equal(stats().genstat_query_apply_operations,1);assert.equal(stats().genstat_query_history,1);assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'3,778,736.00');assert.equal(stats().records.find(r=>r.template_row_key.endsWith('A18')).query_key,'genstat_total_kwh_sold');assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A11')).enabled),0);
   const repeat=await api('apply',submitted);assert.equal(repeat.status,200,JSON.stringify(repeat.data));assert.equal(repeat.data.sqlReplacements.F18.signature,committed.sqlReplacements.F18.signature);assert.equal(stats().genstat_query_history,1);assert.equal(stats().genstat_query_apply_operations,1);
   assert.equal((await api('recover',{operationId:committed.operationId,confirmed:true},august)).status,400);
-  await august.close();
+  await augustContext.close();
   await page.reload();await open();assert(await page.locator('#sql-recovery-panel').isVisible());await page.locator('#sql-recover').click();await page.locator('#report-confirmation').getByRole('button',{name:'Continue'}).click();await idle();assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');assert.equal(await page.locator('input[data-ref="B11"]').inputValue(),'24850653.84');assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A18');assert.equal(stats().genstat_query_apply_operations,1);
-  const foreign=await browser.newContext(),foreignPage=await foreign.newPage();await foreignPage.goto(baseUrl+'/base-report.php?month=202607');const denied=await foreignPage.evaluate(async operationId=>{const r=await fetch('query-settings-api.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...window.genstatReport.snapshot(),action:'recover',operationId,confirmed:true})});return r.status;},committed.operationId);assert.equal(denied,400);await foreign.close();
+  const foreign=await browser.newContext(),foreignPage=await foreign.newPage();await foreignPage.goto(baseUrl+'/base-report.php?month=202607');assert.equal((await api('recover',{operationId:committed.operationId,confirmed:true},foreignPage)).status,400);await foreign.close();
   console.log('PASS: lost response after commit recovers the exact signed result and prior manual values; duplicate operation replays without duplicate history/signatures; other sessions cannot recover it. Save Draft remains pending.');
   await page.locator('#sql-settings-close').click();await page.locator('input[data-ref="B18"]').evaluate(input=>{input.value='5';input.dispatchEvent(new Event('change',{bubbles:true}));});await page.evaluate(()=>window.genstatReport.ready());await open();await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18',{force:true});await test();await apply();assert.equal(stats().genstat_query_history,1);assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).revision),1);assert.equal(stats().genstat_query_apply_operations,2);
   await page.locator('#sql-calculation').fill('TotalKWhSold');assert(await page.locator('#sql-apply').isDisabled());await test();await apply();assert.equal(stats().genstat_query_history,2);await page.locator('#sql-history').click();await idle();const options=await page.locator('#sql-history-select option').evaluateAll(options=>options.map(o=>({value:o.value,text:o.textContent})));const original=options.find(o=>o.text.startsWith('v1 '));assert(original);await page.locator('#sql-history-select').selectOption(original.value);await page.locator('#sql-history-load').click();assert.equal(await page.locator('#sql-calculation').inputValue(),'Sales_KWH + KWH_Diff + Total_Cancelled_KWH');assert((await page.locator('#sql-apply-reason').textContent()).includes('Test the SQL'));assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).revision),2);await test();await apply();assert.equal(Number(stats().records.find(r=>r.template_row_key.endsWith('A18')).revision),3);assert.equal(stats().genstat_query_history,3);
@@ -307,7 +327,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await monthPage.locator('input[data-ref="B11"]').inputValue(),'24850653.84');
   assert.equal((await monthPage.evaluate(()=>window.genstatReport.snapshot())).revision,3);
   assert.equal(fs.readFileSync(legacyDraft,'utf8'),legacyBytes);
-  await monthPage.locator('#sql-settings-open').click();
+  await enterSettings(monthPage);
   await monthPage.locator('#sql-row option').first().waitFor({state:'attached'});
   const fixedSql="SELECT '202607' AS BillMonth, :ReportMonth AS SelectedMonth";
   await monthPage.locator('#sql-editor').fill(fixedSql);

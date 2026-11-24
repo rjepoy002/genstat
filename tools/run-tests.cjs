@@ -1,5 +1,5 @@
 'use strict';
-const fs=require('fs'),path=require('path'),os=require('os'),{execFile,spawn}=require('child_process');
+const fs=require('fs'),path=require('path'),os=require('os'),{execFile,execFileSync,spawn}=require('child_process');
 const {once}=require('events');
 const root=path.resolve(__dirname,'..');
 const aliases=Object.fromEntries(['query-settings-browser','query-calculation-lifecycle','sql-formula-replacement-browser','brookes-point-review-browser'].map(x=>['tests/'+x+'.cjs','tests/query-apply-save-browser.cjs']));
@@ -29,8 +29,36 @@ function startCompactServer(fixture){
 }
 function prepareCompact(fixture){
   copyDir(path.join(root,'partials'),path.join(fixture,'partials'));
-  for(const name of ['base-report.php','query-settings-api.php'])
+  for(const name of ['base-report.php','query-settings-api.php','settings-security-api.php'])
     fs.copyFileSync(path.join(root,name),path.join(fixture,name));
+  // The copied service uses a disposable writer exclusively for security state.
+  for(const name of ['lib/settings-security.php','settings-security-api.php']){
+    const file=path.join(fixture,name),source=fs.readFileSync(file,'utf8');
+    fs.writeFileSync(file,source.replaceAll("qs_db('writer')",'fixture_settings_writer()'));
+  }
+  fs.appendFileSync(path.join(fixture,'lib/settings-security.php'),`
+function fixture_settings_writer(): mysqli {
+    [$schema,$user,$password,$port]=require __DIR__.'/../config/settings-pin-fixture.local.php';
+    return new mysqli('127.0.0.1',$user,$password,$schema,$port);
+}
+`);
+  // Existing UI regressions start from an unlocked Settings modal in the fixture.
+  fs.appendFileSync(path.join(fixture,'assets/settings-security.js'),`
+document.getElementById('sql-settings-open').addEventListener('click',()=>{
+ const box=document.querySelector('#settings-pin-inputs input');
+ const opening=document.getElementById('settings-pin-dialog');
+ let checks=0;
+ const poll=setInterval(()=>{
+  if(!opening.open||checks++>100){clearInterval(poll);return;}
+  if(box.disabled)return;
+  clearInterval(poll);
+  const clipboardData=new DataTransfer();
+  clipboardData.setData('text','085271');
+  box.dispatchEvent(new ClipboardEvent('paste',{clipboardData,cancelable:true}));
+ },25);
+});
+`);
+  execFileSync(phpBinary,[path.join(root,'tests/settings-pin-fixture.php'),'setup',fixture],{windowsHide:true});
   fs.mkdirSync(path.join(fixture,'sessions'));
   // The lifecycle suite owns settings writes. UI suites can only inspect settings.
   fs.writeFileSync(path.join(fixture,'router.php'),`<?php
@@ -83,7 +111,10 @@ async function main(){
         server.kill();
         await closed;
       }
-      if(fixture){const resolved=path.resolve(fixture);if(path.dirname(resolved)!==path.resolve(os.tmpdir())||!path.basename(resolved).startsWith('genstat-test-runner-'))throw Error('Unsafe cleanup target');fs.rmSync(resolved,{recursive:true,force:true});}
+      if(fixture){const resolved=path.resolve(fixture);if(path.dirname(resolved)!==path.resolve(os.tmpdir())||!path.basename(resolved).startsWith('genstat-test-runner-'))throw Error('Unsafe cleanup target');
+        if(fs.existsSync(path.join(resolved,'config/settings-pin-fixture.local.php')))
+          execFileSync(phpBinary,[path.join(root,'tests/settings-pin-fixture.php'),'cleanup',resolved],{windowsHide:true});
+        fs.rmSync(resolved,{recursive:true,force:true});}
     }}
   console.log(`${selected.length-failures}/${selected.length} suites passed. Logs: ${logs}`);process.exitCode=failures?1:0;}
 module.exports={plan,aliases,unit,browser};if(require.main===module)main().catch(error=>{console.error(error);process.exitCode=1;});

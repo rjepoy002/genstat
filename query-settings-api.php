@@ -1,17 +1,20 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/lib/query-settings.php';
-session_set_cookie_params(['httponly'=>true,'samesite'=>'Strict']);session_start();header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');header('X-Content-Type-Options: nosniff');
+require_once __DIR__.'/lib/settings-security.php';
+settings_session_start();header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');header('X-Content-Type-Options: nosniff');
 $draftLock=null;
 try{
  if($_SERVER['REQUEST_METHOD']!=='POST')throw new QuerySettingsError('Use a protected POST request.');
  $raw=file_get_contents('php://input');if(strlen($raw)>150000)throw new QuerySettingsError('Request too large.');$body=json_decode($raw,true,512,JSON_THROW_ON_ERROR);
  if(empty($_SESSION['baseCsrf'])||!base_report_valid_month($body['month']??null)||!is_string($body['csrf']??null)||!hash_equals(base_report_csrf($body['month']),$body['csrf']))throw new QuerySettingsError('Session expired. Reload the report.');
+ settings_require_authorized($_SERVER['HTTP_X_SETTINGS_AUTHORIZATION']??null);
  $month=qs_select_month(qs_available_months(),$body['month']);$l=base_report_layout();$l['reportMonth']=$month;$s=$l['sheets'][0];if(!hash_equals($l['sha256'],(string)($body['hash']??'')))throw new QuerySettingsError('Source template changed. Reload before continuing.');
  $action=$body['action']??'';$draft=base_report_read_draft($l);if(($body['revision']??null)!==$draft['revision'])throw new QuerySettingsError('The saved draft changed. Reload before continuing.');
  $db=qs_db('writer');try{$records=qs_load($db);}finally{$db->close();}
  if($action==='metadata'){
   $area=qs_area_metadata();$rows=qs_rows($l);
+  unset($records[QS_COOP_ROW_KEY]);
   foreach($rows as $key=>&$row){$row['canonicalRowId']=qs_canonical_row_id($l,$key);$row['internalQueryKey']=qs_internal_query_key($l,$key,$records);$row['approvedSqlInputRow']=sql_replacement_row_approved($l,$key);$row['status']=isset($records[$key])?($records[$key]['enabled']?'Configured':'Disabled'):'Not Configured';$candidates=qs_targets($l,['rowKey'=>$key,'enabled'=>true]);
    foreach(['cells','protectedCells'] as $group)foreach($row[$group] as $ref=>&$cell){$cell['suggestedAreaId']=report_area_alias($cell['label'],$area['areas'],$area['areaMappings']);$cell['replacementEligible']=!empty($candidates[$ref]['formulaReplacement']);}unset($cell);
   }unset($row);
@@ -111,7 +114,10 @@ try{
    }catch(Throwable $e){try{$db->rollback();}catch(Throwable $ignored){}error_log('GENSTAT Apply & Save could not be confirmed; operation '.(preg_match('/^[a-f0-9]{48}$/D',$operationId)?$operationId:'invalid').'; '.get_class($e));throw $e;}finally{$db->close();}
   }
  }else throw new QuerySettingsError('Unknown SQL settings operation.');
+ if($action==='apply'&&!($out['recovered']??false))settings_audit('configuration_changed','reporting:'.$key);
+ if($action==='disable')settings_audit('configuration_changed','reporting:'.$body['rowKey']);
  echo json_encode($out,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
-}catch(QuerySettingsError $e){http_response_code($e->getCode()===503?503:400);echo json_encode(['error'=>$e->getMessage()]);}
+}catch(SettingsSecurityError $e){http_response_code($e->getCode());echo json_encode(['error'=>$e->getMessage()]);}
+catch(QuerySettingsError $e){http_response_code($e->getCode()===503?503:400);echo json_encode(['error'=>$e->getMessage()]);}
 catch(Throwable $e){error_log('GENSTAT query settings failed: '.get_class($e).' code '.$e->getCode());http_response_code(400);echo json_encode(['error'=>in_array($action??'',['apply','recover'],true)?'Apply & Save could not be confirmed. Retry the same operation or recover the last committed result before running a new test.':'The SQL operation could not complete. Check query syntax, result columns and local setup; no configuration or report values were saved.']);}
 finally{if(is_resource($draftLock)){flock($draftLock,LOCK_UN);fclose($draftLock);}}

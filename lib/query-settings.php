@@ -9,6 +9,8 @@ const QS_REPORTING_TABLES = [
  'area_master','area_mapping','overallsalessummary','billadjustment',
  'kwh_diff_allocation','billhistorycancelled','billhistorycancelled_2','latebills',
 ];
+// Jul26 identifies the reference template across all reporting months.
+const QS_COOP_ROW_KEY = 'genstat-base/Jul26/A26';
 function qs_config(): array {
  $path=__DIR__.'/../config/query-settings.local.php';if(!is_file($path))throw new QuerySettingsError('SQL settings are not configured. Run the documented local setup.');
  $config=require $path;$actual=$config['allowedTables']??[];$approved=QS_REPORTING_TABLES;
@@ -60,6 +62,11 @@ function qs_month(string $worksheet): string {
  $month=array_search($m[1],['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],true)+1;return '20'.$m[2].sprintf('%02d',$month);
 }
 function qs_rows(array $l): array {
+ $rows=qs_area_input_rows($l);
+ unset($rows[QS_COOP_ROW_KEY]);
+ return $rows;
+}
+function qs_area_input_rows(array $l): array {
  $s=$l['sheets'][0];$out=[];$headers=report_area_headers($l);$formulas=expanded_formulas($s);
  for($r=$l['report']['firstRow']+2;$r<=$l['report']['lastRow'];$r++){
   $label=$s['cells']['A'.$r]['value']??'';
@@ -202,7 +209,7 @@ function qs_period_preview(array $layout,bool $onlyTotal=false,bool $strict=fals
  $area=null;$values=[];$total=[];$results=[];$matchedRows=[];
  $rows=qs_rows($layout);$month=base_report_month($layout);
  foreach($records as $key=>$record){
-  if(!$record['enabled'])continue;
+  if(!$record['enabled']||$key===QS_COOP_ROW_KEY)continue;
   if(!isset($rows[$key])){
    if($strict&&str_starts_with($key,'genstat-base/'.$layout['sheets'][0]['name'].'/'))throw new QuerySettingsError('An enabled saved configuration no longer maps to a report row: '.$key);
    continue;

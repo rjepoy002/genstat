@@ -43,7 +43,7 @@
    style(preview,settings);status.textContent='';
   }
   function showSection(name){
-   for(const section of ['reporting','coop','appearance']){
+   for(const section of ['reporting','coop','appearance','security']){
     byId('settings-'+section).hidden=section!==name;
     byId('settings-'+section+'-tab').setAttribute('aria-pressed',String(section===name));
    }
@@ -53,15 +53,24 @@
   const showAppearance=show=>showSection(show?'appearance':'reporting');
   reportingTab.addEventListener('click',()=>showSection('reporting'));
   appearanceTab.addEventListener('click',()=>showSection('appearance'));
+  byId('settings-security-tab').addEventListener('click',()=>showSection('security'));
   byId('settings-coop-tab').addEventListener('click',()=>showSection('coop'));
-  byId('sql-settings-open').addEventListener('click',()=>{fill(applied);showAppearance(false);});
+  document.addEventListener('genstat-settings-unlocked',()=>{fill(applied);showAppearance(false);});
   dialog.addEventListener('close',()=>fill(applied));
   form.addEventListener('input',()=>{style(preview,draft());status.textContent='';});
   byId('appearance-reset').addEventListener('click',()=>fill(defaults));
   byId('appearance-cancel').addEventListener('click',()=>{fill(applied);showAppearance(false);reportingTab.focus();});
-  form.addEventListener('submit',event=>{
+  form.addEventListener('submit',async event=>{
    event.preventDefault();
-   applied=draft();style(root,applied);
+   const button=form.querySelector('[type=submit]');
+   if(button.disabled)return;
+   const next=draft();
+   button.disabled=true;status.textContent='Saving appearance…';
+   try{await window.genstatSettings.saveAppearance();}
+   catch(error){status.textContent=error.message||'Unable to authorize appearance changes.';return;}
+   finally{button.disabled=false;}
+   if(!dialog.open)return;
+   applied=next;style(root,applied);
    try{localStorage.setItem(key,JSON.stringify(applied));status.textContent='Appearance saved.';}
    catch{status.textContent='Appearance applied for this page. Browser storage is unavailable.';}
    dispatchEvent(new Event('genstat-appearance'));

@@ -4,6 +4,7 @@
 @source "../base-report.php";
 @source "../index.php";
 @source "../partials/sql-settings.php";
+@source "../partials/settings-security.php";
 @source "../partials/coop-phase1.php";
 @source "../partials/recovered-sales.php";
 @source "./sql-settings.js";
@@ -152,3 +153,15 @@ html.dark #recovered-sales [data-delete-recovered]:not(:disabled){color:var(--gs
 
 #coop-status[data-error=true]{color:#a32a20}
 .dark #coop-status[data-error=true]{color:var(--gs-error)}
+
+.settings-security-dialog{width:min(420px,calc(100vw - 24px));max-height:90dvh;margin:auto;box-sizing:border-box;box-shadow:0 24px 80px #0f172a45;font:13px Arial,sans-serif}
+.settings-security-dialog::backdrop{background:#0f172ab8}
+.settings-security-dialog button{padding:7px 12px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#0f172a;font-weight:600}
+.settings-security-dialog button.settings-pin-primary{background:#0f766e;border-color:#0f766e;color:white}
+.settings-security-dialog button:disabled{opacity:.55;cursor:not-allowed}
+.settings-security-dialog input{display:block;width:100%;min-width:0;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:7px;background:white;color:#0f172a;padding:8px}
+#settings-pin-inputs input{height:48px;text-align:center;font-size:20px}
+.settings-security-dialog :is(input,button):focus-visible{outline:2px solid #0d9488;outline-offset:2px}
+.dark .settings-security-dialog :is(input,button:not(.settings-pin-primary)){background:var(--gs-header);color:var(--gs-text);border-color:var(--gs-border)}
+@keyframes settings-pin-shake{25%,75%{transform:translateX(-3px)}50%{transform:translateX(3px)}}
+@media(prefers-reduced-motion:no-preference){.settings-pin-shake{animation:settings-pin-shake .24s ease-in-out}}

@@ -3,7 +3,8 @@ declare(strict_types=1);
 // The focused authoritative base report is the default; retain the full annual editor.
 if(!isset($_GET['legacy'])&&!isset($_GET['sheet'])){require __DIR__.'/base-report.php';return;}
 require __DIR__.'/lib/app.php';require __DIR__.'/lib/render.php';require __DIR__.'/tools/build-layout.php';
-session_set_cookie_params(['httponly'=>true,'samesite'=>'Strict']);session_start();$_SESSION['csrf']??=bin2hex(random_bytes(32));
+require_once __DIR__.'/lib/settings-security.php';
+settings_session_start();settings_revoke();$_SESSION['csrf']??=bin2hex(random_bytes(32));
 try{$l=layout(true);$s=$l['sheets'][0];$primary=true;if(isset($_GET['sheet'])){if(!is_string($_GET['sheet']))throw new InvalidArgumentException('Invalid worksheet identifier.');$matches=array_values(array_filter($l['sheets'],fn($sheet)=>$sheet['name']===$_GET['sheet']));if(!$matches)throw new InvalidArgumentException('Unknown worksheet.');$s=$matches[0];$primary=true;}}catch(Throwable $e){http_response_code(503);header('Content-Type: text/html; charset=utf-8');echo '<!doctype html><html lang="en"><meta charset="utf-8"><title>GenStat synchronization error</title><h1>Synchronization error</h1><p>'.htmlspecialchars($e->getMessage(),ENT_QUOTES,'UTF-8').'</p><p>Existing drafts are preserved. Correct the workbook and reload to retry.</p></html>';exit;}
 [, $last]=explode(':',$s['range'].':'.$s['range']);[$maxCol,$maxRow]=cell_coordinates($last);
 $defaults=['defaultColWidth'=>8.88671875,'defaultRowHeight'=>12];foreach($defaults as $key=>$value)if(preg_match('/'. $key .'="([0-9.]+)"/',$s['settings']['sheetFormatPr']??'',$match))$defaults[$key]=(float)$match[1];

@@ -40,7 +40,7 @@ function qs_tested_result(array $l,array $config): array {
  if(!$tested||$tested['key']!==qs_result_key($l,$config['sql'])||($tested['rowKey']??'')!==$config['rowKey']||$tested['expires']<time())throw new QuerySettingsError('Test the SQL query first. The tested query must match the selected reporting month.');
  if($tested['result']['truncated'])throw new QuerySettingsError('Incomplete query results cannot be applied.');return $tested['result'];
 }
-function qs_owner_hash(array $l): string {$month=base_report_month($l);return hash_hmac('sha256',session_id().($month===BASE_REPORT_LEGACY_MONTH?'':':'.$month),sql_replacement_secret());}
+function qs_owner_hash(array $l): string {$month=base_report_month($l);$owner=$_SESSION['queryReceiptOwnerSession']??session_id();return hash_hmac('sha256',$owner.($month===BASE_REPORT_LEGACY_MONTH?'':':'.$month),sql_replacement_secret());}
 function qs_receipt(mysqli $db,string $operationId): ?array {
  if(!preg_match('/^[a-f0-9]{48}$/D',$operationId))throw new QuerySettingsError('Invalid Apply & Save operation identifier.');
  $stmt=$db->prepare('SELECT * FROM genstat_query_apply_operations WHERE operation_id=?');$stmt->bind_param('s',$operationId);$stmt->execute();return $stmt->get_result()->fetch_assoc();

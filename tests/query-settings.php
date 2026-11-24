@@ -4,7 +4,10 @@ require_once __DIR__.'/../lib/query-settings.php';
 function qcheck(bool $ok,string $message): void{if(!$ok)throw new RuntimeException($message);echo 'PASS: '.$message.PHP_EOL;}
 $l=base_report_layout();$rows=qs_rows($l);$key='genstat-base/Jul26/A11';
 qcheck(qs_month('Jan26')==='202601'&&qs_month('Jul26')==='202607'&&qs_month('Nov26')==='202611','Month comes from worksheet, including November');
-qcheck(array_keys(qs_rows(base_report_layout()))===array_map(fn($row)=>'genstat-base/Jul26/A'.$row,[11,18,24,25,26,39]),'Visibility changes preserve the SQL input rows');
+qcheck(array_keys($rows)===array_map(fn($row)=>'genstat-base/Jul26/A'.$row,[11,18,24,25,39]),'SQL configuration lists only its eligible report rows');
+$renamed=$l;
+$renamed['sheets'][0]['cells']['A26']['value']='Renamed consumption row';
+qcheck(isset(qs_area_input_rows($renamed)[QS_COOP_ROW_KEY])&&!isset(qs_rows($renamed)[QS_COOP_ROW_KEY]),'COOP row exclusion uses its stable key');
 $months=qs_sorted_months(['202607',202608,'202607',null,'','202613','202600','2026-09',' 202609','000001','202601']);
 qcheck($months===['202608','202607','202601'],'Valid calendar months are deduplicated and sorted newest first');
 qcheck(qs_select_month($months,null)==='202608'&&qs_select_month($months,null,'202607')==='202607'&&qs_select_month($months,'202601','202607')==='202601'&&qs_select_month($months,null,'202609')==='202608','Month selection honors explicit, previous and latest available month');
