@@ -6,6 +6,7 @@
  </div>
  <nav class="flex flex-wrap gap-2 border-b border-slate-200 px-4 py-2 dark:border-gs-border" aria-label="Settings sections">
   <button id="settings-reporting-tab" type="button" aria-controls="settings-reporting" aria-pressed="true">Reporting Configuration</button>
+  <button id="settings-coop-tab" type="button" aria-controls="settings-coop" aria-pressed="false">COOP Consumption</button>
   <button id="settings-appearance-tab" type="button" aria-controls="settings-appearance" aria-pressed="false">Appearance</button>
  </nav>
  </div>
@@ -64,6 +65,7 @@
    <div class="sql-apply-actions flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3"><button id="sql-apply" type="button" class="sql-primary" aria-describedby="sql-apply-reason" disabled>Apply &amp; Save</button><p id="sql-apply-reason" class="m-0 text-xs text-slate-600" role="status" aria-live="polite">Test the SQL query first.</p></div>
   </section>
  </div>
+ <?php require __DIR__.'/coop-phase1.php';?>
  <?php require __DIR__.'/report-appearance.php';?>
 </dialog>
 

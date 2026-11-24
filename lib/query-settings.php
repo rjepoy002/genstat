@@ -73,10 +73,13 @@ function qs_rows(array $l): array {
  return $out;
 }
 function qs_parse(string $sql): array {
- $cfg=qs_config();$node=$cfg['node'];if(!is_file($node)||!is_file(__DIR__.'/../node_modules/node-sql-parser/package.json'))throw new QuerySettingsError('The SQL parser runtime is unavailable. Query execution is disabled.');
+ $cfg=qs_config();return qs_parse_scoped($sql,$cfg['allowedTables'],$cfg['reader']['database']);
+}
+function qs_parse_scoped(string $sql,array $allowedTables,string $database): array {
+ $node=qs_config()['node'];if(!is_file($node)||!is_file(__DIR__.'/../node_modules/node-sql-parser/package.json'))throw new QuerySettingsError('The SQL parser runtime is unavailable. Query execution is disabled.');
  $out=tmpfile();$err=tmpfile();$proc=proc_open([$node,'--max-old-space-size=128',__DIR__.'/../tools/validate-report-sql.cjs'],[0=>['pipe','r'],1=>$out,2=>$err],$pipes,dirname(__DIR__),null,['bypass_shell'=>true]);
  if(!is_resource($proc))throw new QuerySettingsError('The SQL parser could not start.');
- try{fwrite($pipes[0],json_encode(['sql'=>$sql,'allowedTables'=>$cfg['allowedTables'],'database'=>$cfg['reader']['database']],JSON_THROW_ON_ERROR));fclose($pipes[0]);$start=microtime(true);
+ try{fwrite($pipes[0],json_encode(['sql'=>$sql,'allowedTables'=>$allowedTables,'database'=>$database],JSON_THROW_ON_ERROR));fclose($pipes[0]);$start=microtime(true);
   do{$state=proc_get_status($proc);if(!$state['running'])break;if(microtime(true)-$start>5){proc_terminate($proc);throw new QuerySettingsError('SQL validation timed out.');}usleep(10000);}while(true);
   rewind($out);$result=json_decode(stream_get_contents($out),true);if(!$result||empty($result['ok']))throw new QuerySettingsError($result['error']??'SQL grammar validation failed. No query was executed.');return $result;
  }finally{proc_close($proc);fclose($out);fclose($err);}

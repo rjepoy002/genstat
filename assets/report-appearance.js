@@ -31,7 +31,6 @@
   const dialog=byId('sql-settings-dialog');
   if(!dialog){system.addEventListener('change',()=>style(root,applied));return;}
   const form=byId('report-appearance-form'),preview=byId('appearance-preview');
-  const reporting=byId('settings-reporting'),appearance=byId('settings-appearance');
   const reportingTab=byId('settings-reporting-tab'),appearanceTab=byId('settings-appearance-tab');
   const status=byId('appearance-status');
   function draft(){
@@ -43,14 +42,18 @@
    for(const [name,value] of Object.entries(settings))form.elements.namedItem(name).value=value;
    style(preview,settings);status.textContent='';
   }
-  function showAppearance(show){
-   reporting.hidden=show;appearance.hidden=!show;
-   reportingTab.setAttribute('aria-pressed',String(!show));appearanceTab.setAttribute('aria-pressed',String(show));
-   byId('sql-context').hidden=show;
+  function showSection(name){
+   for(const section of ['reporting','coop','appearance']){
+    byId('settings-'+section).hidden=section!==name;
+    byId('settings-'+section+'-tab').setAttribute('aria-pressed',String(section===name));
+   }
+   byId('sql-context').hidden=name!=='reporting';
    dialog.scrollTop=0;
   }
-  reportingTab.addEventListener('click',()=>showAppearance(false));
-  appearanceTab.addEventListener('click',()=>showAppearance(true));
+  const showAppearance=show=>showSection(show?'appearance':'reporting');
+  reportingTab.addEventListener('click',()=>showSection('reporting'));
+  appearanceTab.addEventListener('click',()=>showSection('appearance'));
+  byId('settings-coop-tab').addEventListener('click',()=>showSection('coop'));
   byId('sql-settings-open').addEventListener('click',()=>{fill(applied);showAppearance(false);});
   dialog.addEventListener('close',()=>fill(applied));
   form.addEventListener('input',()=>{style(preview,draft());status.textContent='';});

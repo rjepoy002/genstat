@@ -4,6 +4,7 @@
 @source "../base-report.php";
 @source "../index.php";
 @source "../partials/sql-settings.php";
+@source "../partials/coop-phase1.php";
 @source "../partials/recovered-sales.php";
 @source "./sql-settings.js";
 /* Settings-only components: isolate the dashboard from the workbook grid. */
@@ -148,3 +149,6 @@ html.dark #recovered-sales [data-delete-recovered]:not(:disabled){color:var(--gs
 .dark #sql-settings-dialog nav button[aria-pressed="true"]{border-color:var(--gs-selection);background:var(--gs-header);color:var(--gs-text)}
 #report-appearance-form input[type="color"]{padding:4px;height:36px}
 @media(prefers-reduced-motion:reduce){#sql-settings-dialog button,#sql-settings-dialog .settings-input{transition:none}}
+
+#coop-status[data-error=true]{color:#a32a20}
+.dark #coop-status[data-error=true]{color:var(--gs-error)}

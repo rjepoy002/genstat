@@ -88,11 +88,16 @@ function base_report_calculate(array $l,array $values=[],array $formulas=[],arra
   }unset($cell);
  }
  $engine=new FormulaEngine($working,$values,$formulas);$out=[];
+ $coopRefs=array_flip(array_values($l['coopAreaTargets']??[]));
  foreach($s['cells'] as $ref=>$cell){if(!range_contains($l['report']['range'],$ref))continue;
   try{$value=$engine->value($s['name'],$ref);$error=null;}catch(FormulaError $e){$value=$e->getMessage();$error=$value;}
   $display=$cell;$display['value']=is_bool($value)?($value?'1':'0'):($value===null?'':(is_float($value)?sprintf('%.17g',$value):(string)$value));
   if(isset($values[$ref])||array_key_exists($ref,$total)||$cell['classification']==='formula')$display['type']=$error?'e':(is_numeric($value)?'n':'str');
   $out[$ref]=['value'=>$value,'display'=>isset($recovered[$ref])?number_format((float)$recovered[$ref],2):display_value($display,$l),'error'=>$error];
+  if(!$error&&isset($coopRefs[$ref],$total[$ref])){
+   [$whole,$fraction]=array_pad(explode('.',$total[$ref],2),2,'');
+   $out[$ref]['display']=preg_replace('/\B(?=(\d{3})+(?!\d))/',',',$whole).'.'.str_pad($fraction,2,'0');
+  }
  }
  $warnings=[];foreach($engine->warnings as $key=>$message){$ref=substr($key,strpos($key,'!')+1);$warnings[]=['cell'=>$key,'formula'=>expanded_formulas($s)[$ref]??null,'message'=>$message];}
  return ['cells'=>$out,'warnings'=>$warnings,'errors'=>$engine->errors,'recoveredSales'=>(object)$recovered];

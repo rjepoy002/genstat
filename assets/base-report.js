@@ -177,7 +177,7 @@
    cell.toggleAttribute('data-manual-formula-override',Object.hasOwn(data.formulas,ref)&&!controlled(ref)&&!record);
    if(fromSql)cell.dataset.sqlApplied='true';
    else delete cell.dataset.sqlApplied;
-   cell.title=controlled(ref)?ref+' ? SQL-controlled Total KWH Sold':
+   cell.title=controlled(ref)?ref+(data.sqlTargets[ref]==='coop-registered-accounts'?' / SQL-controlled COOP Consumption':' / SQL-controlled Total KWH Sold'):
     fromSql?(record?`${ref} ? SQL-applied value ? Original template ${record.originalFormula}`:`${ref} ? SQL-applied value`):cell.dataset.templateTitle+(cell.hasAttribute('data-manual-formula-override')?' / Manual formula override':'');
   }
  }
@@ -192,13 +192,16 @@
   if(action==='export'&&response.ok)return response.blob();
   const result=await response.json();if(!response.ok||result.error)throw Error(result.error||'Request failed');return result;
  }
- function renderCalculation(result,inputs=false){
+ function renderCalculation(result,inputs=false,preserveActive=false){
   if(result.recoveredSales)data.recoveredSales=result.recoveredSales;
   for(const [ref,c] of Object.entries(result.cells)){
    const cell=table.querySelector(`[data-classification][data-ref="${ref}"]`);if(!cell||cell.tagName==='TH')continue;
    cell.querySelector('.value').textContent=c.display;
    cell.toggleAttribute('data-calculation-error',Boolean(c.error));
-   const input=inputs&&cell.querySelector('input');if(input){input.value=inputValue(ref);input.readOnly=recovered(ref)||controlled(ref);}
+   const input=inputs&&cell.querySelector('input');if(input){
+    input.readOnly=recovered(ref)||controlled(ref);
+    if(!preserveActive||input.readOnly||document.activeElement!==input)input.value=inputValue(ref);
+   }
   }
   warn(result.warnings,result.errors);sizeNumericColumns();
  }
@@ -416,7 +419,30 @@
   renderCalculation(result,true);
   if(selected)select(selected);
  }
- window.genstatReport={confirmAction,refreshRecoveredSales,notifyRecoveredSalesSaved:()=>notifyReport('Recovered Sales saved and GENSTAT summary updated successfully.'),snapshot:()=>({month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,values:structuredClone(data.values),formulas:structuredClone(data.formulas),sqlReplacements:structuredClone(data.sqlReplacements),sqlSources:structuredClone(data.sqlSources)}),
+ const coopSyncStatus=document.querySelector('#coop-sync-status'),coopResync=document.querySelector('#coop-resync');
+ function displayCoopSync(){
+  coopSyncStatus.textContent=data.coopSyncWarning??'';
+ }
+ function soldTotalUnavailable(){
+  return Object.entries(data.total).some(([ref,value])=>value===null&&data.sqlTargets[ref]!=='coop-registered-accounts');
+ }
+ function refreshCoop(){
+  const month=data.month;
+  coopResync.disabled=true;
+  pending=pending.catch(()=>{}).then(async()=>{
+   if(month!==data.month)return;
+   const result=await request('calculate',{refreshTotal:true});
+   if(month!==data.month)return;
+   for(const key of ['total','sqlTargets','previewToken','coopSyncWarning'])data[key]=result[key];
+   displayCoopSync();sqlIndicators();renderCalculation(result,true,true);
+   if(selected&&!editingRef)select(selected);
+  }).catch(()=>{
+   coopSyncStatus.textContent='COOP sync failed. Last displayed values were kept.';
+  }).finally(()=>{coopResync.disabled=false;});
+  return pending;
+ }
+ coopResync.addEventListener('click',refreshCoop);
+ window.genstatReport={confirmAction,refreshRecoveredSales,refreshCoop,notifyRecoveredSalesSaved:()=>notifyReport('Recovered Sales saved and GENSTAT summary updated successfully.'),snapshot:()=>({month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,values:structuredClone(data.values),formulas:structuredClone(data.formulas),sqlReplacements:structuredClone(data.sqlReplacements),sqlSources:structuredClone(data.sqlSources)}),
   previewContext:()=>({preview:data.preview,total:data.total,previewToken:data.previewToken}),
   disableSqlLabels(rowKey){setRestoreRecovery(null);
    for(const [ref,key] of Object.entries(data.sqlTargets))if(key===rowKey)delete data.sqlTargets[ref];
@@ -429,7 +455,9 @@
    dirty=true;
    status.textContent='SQL values applied · Unsaved changes';
    if(result.previewContext){
+    const coopTargets=Object.fromEntries(Object.entries(data.sqlTargets).filter(([,source])=>source==='coop-registered-accounts'));
     Object.assign(data,result.previewContext);
+    Object.assign(data.sqlTargets,coopTargets);
     sqlIndicators();renderCalculation(result.calculation,true);if(selected)select(selected);
     return;
    }
@@ -441,8 +469,9 @@
      if(version===sequence){
       data.total=calculation.total;data.previewToken=calculation.previewToken;
       data.sqlTargets=calculation.sqlTargets??data.sqlTargets;sqlIndicators();
+      if(Object.hasOwn(calculation,'coopSyncWarning')){data.coopSyncWarning=calculation.coopSyncWarning;displayCoopSync();}
       renderCalculation(calculation,true);if(selected)select(selected);
-      if(Object.values(data.total).includes(null))status.textContent='Total KWH Sold is unavailable.';
+      if(soldTotalUnavailable())status.textContent='Total KWH Sold is unavailable.';
      }
     }).catch(e=>{status.textContent=e.message;status.classList.add('error');});
    }else{renderCalculation(result.calculation,true);if(selected)select(selected);}
@@ -472,6 +501,7 @@
    if(result.month!==data.month||!result.calculation?.cells||!result.values||!result.formulas||!result.sqlReplacements||!result.sqlSources||!result.preview||!result.total||(!undo&&!result.sqlTargets))throw Error('The restoration response is incomplete.');
    const {calculation,undoToken,draftChanged,...state}=result;
    Object.assign(data,state);
+   displayCoopSync();
    if(undo){
     data.sqlTargets=recovery.sqlTargets;
     dirty=recovery.revision===data.revision?recovery.dirty:true;
@@ -550,6 +580,7 @@
    if(result.month!==target)throw Error('The response belongs to a different reporting period.');
    if(!result.calculation?.cells||!result.values||!result.formulas||!result.sqlReplacements||!result.sqlSources||!result.sqlTargets||!result.preview||!result.total)throw Error('The reporting response is incomplete.');
    Object.assign(data,result);
+   displayCoopSync();
    syncSelectors(target);
    selectRowLabel(null);
    setWorksheetUnlocked(false);clearManualHistory();selected?.classList.remove('selected');selected=null;
@@ -559,7 +590,7 @@
    dirty=false;sqlIndicators();renderCalculation(result.calculation,true);
    const label=formatPeriod(target);periodLabel.textContent=label;table.setAttribute('aria-label',label+' KWH purchased, sold and system losses');
    const url=new URL(location.href);url.searchParams.set('month',target);history.replaceState(null,'',url);
-   status.textContent=(data.revision?'Draft loaded. ':'')+(Object.values(data.total).includes(null)?'Total KWH Sold is unavailable.':Object.keys(data.preview).length||Object.keys(data.total).length?'Read-only SQL results.':'No saved SQL preview values.');
+   status.textContent=(data.revision?'Draft loaded. ':'')+(soldTotalUnavailable()?'Total KWH Sold is unavailable.':Object.keys(data.preview).length||Object.keys(data.total).length?'Read-only SQL results.':'No saved SQL preview values.');
    status.classList.remove('error');failedMonth=null;
   }catch(e){
    if(version!==loadSequence)return;
