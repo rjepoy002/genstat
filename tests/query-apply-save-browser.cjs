@@ -18,6 +18,12 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   fs.writeFileSync(reportingLibrary,reportingSource
    .replace('return qs_sorted_months($months);',"return qs_sorted_months([...$months,'202707','202709']);")
    .replace(executeSignature,executeSignature+"\n if(is_file(__DIR__.'/../fail-fresh-query'))throw new QuerySettingsError('Fixture query failed after Test Query.');"));
+  const filesLibrary=path.join(root,'lib/files.php');
+  const writeSignature='function atomic_file_write(string $path, string $bytes): void {';
+  const filesSource=fs.readFileSync(filesLibrary,'utf8');
+  assert(filesSource.includes(writeSignature));
+  fs.writeFileSync(filesLibrary,filesSource.replace(writeSignature,writeSignature+
+   "\n if(is_file(__DIR__.'/../fail-restore-write') && preg_match('/^base-report-[a-f0-9]+-[0-9]{6}\\.json$/D',basename($path)))throw new RuntimeException('Fixture draft write failed.');"));
   const listener=require('net').createServer();await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve));const port=listener.address().port;await new Promise(resolve=>listener.close(resolve));const baseUrl=`http://127.0.0.1:${port}`;
   server=spawn(php,['-d','display_errors=0','-S',`127.0.0.1:${port}`,'-t',root],{windowsHide:true,stdio:['ignore','ignore','pipe']});server.stderr.on('data',data=>serverLog+=data.toString());let ready=false;for(let i=0;i<50;i++){try{if((await fetch(baseUrl+'/base-report.php')).ok){ready=true;break;}}catch{}await new Promise(resolve=>setTimeout(resolve,100));}assert(ready,'Isolated test server starts');
   browser=await chromium.launch({executablePath:'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',headless:true});const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -198,10 +204,14 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await page.keyboard.press('Enter');
   const restoreDialog=page.locator('#report-confirmation');
   assert.equal(await restoreDialog.locator('#report-confirmation-detail').textContent(),'July 2026');
+  const restoreResponse=page.waitForResponse(response=>response.url().endsWith('/base-report.php')&&
+   response.request().method()==='POST'&&response.request().postDataJSON().action==='restore-report');
   await restoreDialog.getByRole('button',{name:'Restore & Recalculate',exact:true}).click();
-  await page.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Report formulas restored'));
+  const restoredReport=await restoreResponse;
+  assert.equal(restoredReport.status(),200,await restoredReport.text());
+  await page.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Report formulas and SQL values restored successfully.'));
   assert.equal((await page.evaluate(()=>window.genstatReport.snapshot())).sqlReplacements.F18.value,'1201329');
- await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#status').textContent==='Draft saved');await page.reload();assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');
+ assert.equal(await page.locator('#status').textContent(),'Report restored and saved');await page.reload();assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');
   await page.setViewportSize({width:1440,height:1000});
   await page.emulateMedia({colorScheme:'light'});
   assert.doesNotMatch(serverLog,/PHP (?:Warning|Fatal error|Parse error|Notice)/);
@@ -211,7 +221,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   const rebuildPage=await context.newPage();
   await rebuildPage.goto(baseUrl+'/base-report.php?month=202607');
   const rebuildSnapshot=()=>rebuildPage.evaluate(()=>window.genstatReport.snapshot());
-  const beforeRebuild=await rebuildSnapshot(),beforeConfig=stats(),beforeDraft=fs.readFileSync(draft);
+  const beforeRebuild=await rebuildSnapshot(),beforeConfig=stats();
   const rebuildButton=rebuildPage.locator('#restore-sql'),rebuildDialog=rebuildPage.locator('#report-confirmation');
   const rebuildNotice=rebuildPage.locator('#restore-notice'),rebuildOverlay=rebuildPage.locator('#report-loading-overlay');
   const confirmRebuild=async()=>{
@@ -227,9 +237,9 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await confirmRebuild();
   assert(await rebuildOverlay.isVisible());
   assert(await rebuildButton.isDisabled());
-  assert.match(await rebuildOverlay.textContent(),/Restoring Excel formulas and recalculating report/);
+  assert.match(await rebuildOverlay.textContent(),/Refreshing SQL values and restoring report formulas/);
   releaseRebuild();
-  await rebuildPage.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Report formulas restored'));
+  await rebuildPage.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Report formulas and SQL values restored successfully.'));
   const rebuilt=await rebuildSnapshot();
   assert.equal(rebuilt.month,'202607');
   assert.equal(rebuilt.values.B11,String(ordinary.values.B11));
@@ -238,23 +248,23 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await rebuildPage.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');
   assert.equal(await rebuildPage.locator('td[data-ref="B11"]').getAttribute('data-sql-applied'),'true');
   assert.deepEqual(stats(),beforeConfig);
-  assert.deepEqual(fs.readFileSync(draft),beforeDraft);
-  await rebuildPage.locator('#undo-restore').click();
-  await rebuildPage.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Previous report recovered'));
-  assert.deepEqual(await rebuildSnapshot(),beforeRebuild);
+  assert.equal(rebuilt.revision,beforeRebuild.revision+1);
+  assert.equal(JSON.parse(fs.readFileSync(draft,'utf8')).values.B11,rebuilt.values.B11);
+  assert(await rebuildPage.locator('#undo-restore').isHidden());
+  const beforeDraft=fs.readFileSync(draft);
   const failureFlag=path.join(root,'fail-fresh-query');
   fs.writeFileSync(failureFlag,'');
   try{
    await confirmRebuild();
    await rebuildPage.waitForFunction(()=>document.querySelector('#restore-notice').hasAttribute('data-error'));
    assert.match(await rebuildNotice.textContent(),/Restoration failed.*previous report has been preserved/);
-   assert.deepEqual(await rebuildSnapshot(),beforeRebuild);
+   assert.deepEqual(await rebuildSnapshot(),rebuilt);
    assert.deepEqual(stats(),beforeConfig);
    assert.deepEqual(fs.readFileSync(draft),beforeDraft);
   }finally{fs.unlinkSync(failureFlag);}
   await rebuildPage.goto(baseUrl+'/base-report.php?month=202608');
   await confirmRebuild();
-  await rebuildPage.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Report formulas restored'));
+  await rebuildPage.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Report formulas and SQL values restored successfully.'));
   const augustRebuild=await rebuildSnapshot();
   assert.equal(augustRebuild.month,'202608');
   assert.equal(augustRebuild.sqlReplacements.F18.reportMonth,'202608');
@@ -279,9 +289,9 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await monthPage.locator('#report-month').selectOption('202608');
   await monthPage.waitForURL(augustUrl);
   const augustState=await monthPage.evaluate(()=>window.genstatReport.snapshot());
-  assert.equal(augustState.revision,0);
-  assert.deepEqual(augustState.values,{});
-  assert.deepEqual(augustState.sqlReplacements,{});
+  assert.equal(augustState.revision,augustRebuild.revision);
+  assert.deepEqual(augustState.values,augustRebuild.values);
+  assert.deepEqual(augustState.sqlReplacements,augustRebuild.sqlReplacements);
   assert.equal(await monthPage.locator('[data-ref="G18"] .value').textContent(),'1,201,330.00');
   assert.equal(await monthPage.locator('[data-ref="F18"] .value').textContent(),'1,201,330.00');
   assert.equal(await monthPage.locator('[data-ref="Q18"] .value').textContent(),'18,019,950.00');
@@ -320,12 +330,12 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await monthPage.waitForFunction(()=>document.querySelector('#status').textContent==='Draft saved');
   await monthPage.reload();
   assert.equal(await monthPage.locator('[data-ref="F18"] .value').textContent(),'1,201,330.00');
-  assert.equal((await monthPage.evaluate(()=>window.genstatReport.snapshot())).revision,1);
+  assert.equal((await monthPage.evaluate(()=>window.genstatReport.snapshot())).revision,augustRebuild.revision+1);
   await monthPage.locator('#report-month').selectOption('202607');
   await monthPage.waitForURL(july);
   assert.equal(await monthPage.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');
   assert.equal(await monthPage.locator('input[data-ref="B11"]').inputValue(),'24850653.84');
-  assert.equal((await monthPage.evaluate(()=>window.genstatReport.snapshot())).revision,3);
+  assert.equal((await monthPage.evaluate(()=>window.genstatReport.snapshot())).revision,rebuilt.revision+1);
   assert.equal(fs.readFileSync(legacyDraft,'utf8'),legacyBytes);
   await enterSettings(monthPage);
   await monthPage.locator('#sql-row option').first().waitFor({state:'attached'});
@@ -512,12 +522,23 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await sqlLabel('B25'),'true');
   await writeManual('1abc');
   assert.match(await page.locator('#status').textContent(),/valid numeric value/);
+  assert(await page.locator('#report-save-check').isHidden());
   assert.equal(await hasManual(),null);
+  await overrideCell.press('F2');
+  assert.equal(await manual.inputValue(),'1abc');
+  await manual.press('Escape');
   assert.equal(await page.locator('#unlock').getAttribute('aria-pressed'),'false');
   await writeManual('12','Enter');
   assert.equal(await page.evaluate(()=>document.activeElement.dataset.ref),'B26');
   assert.equal(await hasManual(),'true');
   assert.equal(await valueAt('Q25'),12);
+  assert(await page.locator('#report-save-check').isVisible());
+  await overrideCell.press('ArrowRight');
+  assert.equal(await page.locator('#selection').textContent(),'C25');
+  assert.equal(await sqlLabel('C25'),'true');
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.locator('#selection').textContent(),'B25');
+  assert.equal(await hasManual(),'true');
   assert.match(await overrideCell.getAttribute('title'),/Original SQL: 0.00/);
   assert.equal(await overrideCell.locator('.value').evaluate(cell=>getComputedStyle(cell,'::before').content),'"MAN "');
   for(const [theme,color] of [['light','rgb(180, 83, 9)'],['dark','rgb(251, 191, 36)']]){
@@ -529,8 +550,23 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(await hasManual(),'true');
   assert.equal(await manual.inputValue(),'0');
   assert.equal(await page.locator('td[data-ref="Q25"] .value').textContent(),zeroTotal);
+  assert.equal(await undoCell.getAttribute('title'),'Undo SQL Cell Edit');
+  assert.equal(await undoCell.getAttribute('aria-label'),'Undo SQL Cell Edit');
+  assert.equal((await undoCell.textContent()).trim(),'');
+  assert.equal(await undoCell.locator('svg').count(),1);
+  for(const width of [1440,420,390,320]){
+   await page.setViewportSize({width,height:1000});
+   const buttons=await page.locator('.report-toolbar :is(#undo-formula,#sql-settings-open)').evaluateAll(items=>items.map(button=>{
+    const style=getComputedStyle(button),{width,height,left,right}=button.getBoundingClientRect();
+    return {size:[width,height,style.borderColor,style.borderRadius],fits:left>=0&&right<=innerWidth};
+   }));
+   assert.deepEqual(buttons[0],buttons[1]);
+   assert(buttons[0].fits);
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  }
   await undoCell.click();await idle();
   assert.equal(await valueAt('B25'),12);
+  await page.setViewportSize({width:1440,height:1000});
   await undoCell.click();await idle();
   assert.equal(await sqlLabel('B25'),'true');
   assert.equal(await manual.inputValue(),'0');
@@ -565,34 +601,113 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal(audit.at(-2).oldSource,'MAN');
   assert.equal(audit.at(-2).newSource,'SQL');
   assert.equal(audit.at(-1).newValue,'12');
-  await page.locator('#restore-sql').click();
-  await restoreValueDialog.getByRole('button',{name:'Restore & Recalculate'}).click();
-  await page.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Report formulas restored'));
-  assert.equal(await hasManual(),'true');
-  assert.equal(await valueAt('B25'),12);
-  assert.equal(await sqlLabel('B25'),null);
-  assert.equal(await sqlLabel('C25'),'true');
+  await formulaBackedSql.fill('1100000');
+  await formulaBackedSql.press('Enter');await idle();
   await page.locator('#save').click();
   await page.waitForFunction(()=>document.querySelector('#status').textContent==='Draft saved');
+  const editResponse=page.waitForResponse(response=>response.url().endsWith('/base-report.php')&&
+   response.request().method()==='POST'&&response.request().postDataJSON().action==='edit-sql-manual');
+  await writeManual('15');
+  const staleUndoToken=(await (await editResponse).json()).editToken;
+  const unrelated=page.locator('input[data-ref="B24"]');
+  await unrelated.fill('7');await unrelated.press('Tab');await idle();
+  const beforeRestoreDraft=fs.readFileSync(draft),beforeRestoreManual=fs.readFileSync(draft+'.sql-manual.json');
+  const lossBefore=await page.locator('td[data-ref="F30"] .value').textContent();
+  await page.locator('#restore-sql').click();
+  await restoreValueDialog.getByRole('button',{name:'Cancel'}).click();
+  assert.equal(await valueAt('B25'),15);
+  assert.deepEqual(fs.readFileSync(draft),beforeRestoreDraft);
+  fs.writeFileSync(failureFlag,'');
+  try{
+   await page.locator('#restore-sql').click();
+   await restoreValueDialog.getByRole('button',{name:'Restore & Recalculate'}).click();
+   await page.waitForFunction(()=>document.querySelector('#restore-notice').hasAttribute('data-error'));
+   assert.match(await page.locator('#restore-notice').textContent(),/Fixture query failed/);
+   assert.equal(await valueAt('B25'),15);
+   assert.equal(await hasManual(),'true');
+   assert.deepEqual(fs.readFileSync(draft),beforeRestoreDraft);
+   assert.deepEqual(fs.readFileSync(draft+'.sql-manual.json'),beforeRestoreManual);
+  }finally{fs.unlinkSync(failureFlag);}
+  const failedWrite=path.join(root,'fail-restore-write');
+  fs.writeFileSync(failedWrite,'');
+  try{
+   await page.locator('#restore-sql').click();
+   await restoreValueDialog.getByRole('button',{name:'Restore & Recalculate'}).click();
+   await page.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Fixture draft write failed'));
+   assert.equal(await valueAt('B25'),15);
+   assert.equal(await hasManual(),'true');
+   assert.deepEqual(fs.readFileSync(draft),beforeRestoreDraft);
+   assert.deepEqual(fs.readFileSync(draft+'.sql-manual.json'),beforeRestoreManual);
+  }finally{fs.unlinkSync(failedWrite);}
+  const otherContext=await browser.newContext(),otherPage=await otherContext.newPage();
+  await otherPage.goto(reportUrl+'?month=202609');
+  const otherInput=otherPage.locator('input[data-ref="B25"]');
+  await otherInput.fill('21');await otherInput.press('Tab');
+  await otherPage.evaluate(()=>window.genstatReport.ready());
+  await otherPage.locator('td[data-ref="B25"][data-sql-manual]').waitFor();
+  await page.locator('#restore-sql').click();
+  await restoreValueDialog.getByRole('button',{name:'Restore & Recalculate'}).click();
+  await page.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Report formulas and SQL values restored successfully.'));
+  assert.equal(await hasManual(),null);
+  assert.equal(await valueAt('B25'),910);
+  assert.equal(await valueAt('F18'),1201329);
+  assert.equal(await sqlLabel('B25'),'true');
+  assert.equal(await sqlLabel('C25'),'true');
+  assert.equal(await unrelated.inputValue(),'7');
+  assert.notEqual(await page.locator('td[data-ref="F30"] .value').textContent(),lossBefore);
+  assert(await undoCell.isHidden());
+  const staleUndoStatus=await page.evaluate(async editToken=>{
+   const report=window.genstatReport;
+   const response=await fetch('base-report.php',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({...report.snapshot(),...report.previewContext(),action:'undo-sql-manual',ref:'B25',editToken})});
+   return response.status;
+  },staleUndoToken);
+  assert.equal(staleUndoStatus,400);
+  assert.equal(await page.locator('#status').textContent(),'Report restored and saved');
+  const restoredDraft=JSON.parse(fs.readFileSync(draft,'utf8'));
+  assert.equal(restoredDraft.values.B25,'910');
+  assert.equal(restoredDraft.values.B24,'7');
+  assert.equal(restoredDraft.sqlManualRestore.overrides.B25,undefined);
+  assert.equal(restoredDraft.sqlManualRestore.overrides.F18,undefined);
+  await otherPage.reload();
+  assert.equal(await otherInput.inputValue(),'21');
+  await otherPage.locator('td[data-ref="B25"][data-sql-manual]').waitFor();
+  await otherContext.close();
+  const restoredExport=page.waitForEvent('download');
+  await page.locator('#report-export').click();
+  await (await restoredExport).saveAs(path.join(root,'adjustment-export.xlsx'));
+  process.stdout.write(fixture('adjustment-export','910'));
   await page.locator('#report-year').selectOption('2027');
   await page.waitForFunction(()=>window.genstatReport.snapshot().month.startsWith('2027'));
   assert.equal(await hasManual(),null);
   await page.goto(july);
-  assert.equal(await valueAt('B25'),12);
+  assert.equal(await valueAt('B25'),910);
   await page.reload();
-  assert.equal(await sqlLabel('B25'),null);
-  assert.equal(await hasManual(),'true');
-  assert.equal(await valueAt('B25'),12);
+  assert.equal(await sqlLabel('B25'),'true');
+  assert.equal(await hasManual(),null);
+  assert.equal(await valueAt('B25'),910);
   assert.equal(await sqlLabel('C25'),'true');
   await page.locator('#report-month').selectOption('202609');
   await page.waitForURL(reportUrl+'?month=202609');
-  assert.equal(await sqlLabel('B25'),'true');
-  assert.equal(await hasManual(),null);
+  assert.equal(await hasManual(),'true');
   await page.locator('#report-month').selectOption('202607');
   await page.waitForURL(july);
-  assert.equal(await sqlLabel('B25'),null);
-  assert.equal(await valueAt('B25'),12);
+  assert.equal(await sqlLabel('B25'),'true');
+  assert.equal(await valueAt('B25'),910);
   assert.equal(await sqlLabel('C25'),'true');
+  await open();
+  await rowSelection.selectOption('genstat-base/Jul26/A25',{force:true});
+  await page.locator('#sql-calculation').fill('KWH_Diff - KWH_Diff');
+  assert.equal((await test()).validationPassed,true);
+  await apply();
+  await page.locator('#sql-settings-close').click();
+  await writeManual('12');
+  await page.locator('#restore-sql').click();
+  await restoreValueDialog.getByRole('button',{name:'Restore & Recalculate'}).click();
+  await page.waitForFunction(()=>document.querySelector('#restore-notice').textContent.includes('Report formulas and SQL values restored successfully.'));
+  assert.equal(await sqlLabel('B25'),'true');
+  assert.equal(await manual.inputValue(),'0');
+  await writeManual('12');
   await open();
   await rowSelection.selectOption('genstat-base/Jul26/A25',{force:true});
   await page.locator('#sql-history').click();
@@ -617,7 +732,21 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   await periodPage.reload();
   assert.match(await periodPage.locator('#warnings').textContent(),/SQL refresh failed/);
   assert.equal(await periodPage.locator('[data-ref="F18"] .value').textContent(),lastValidSold);
+  const failedRestore=async message=>{
+   await periodPage.locator('#restore-sql').click();
+   const response=periodPage.waitForResponse(item=>item.url().endsWith('/base-report.php')&&
+    item.request().method()==='POST'&&item.request().postDataJSON().action==='restore-report');
+   await periodPage.locator('#report-confirmation').getByRole('button',{name:'Restore & Recalculate'}).click();
+   const failure=await response;
+   assert.equal(failure.status(),400);
+   const error=(await failure.json()).error;
+   assert.match(error,message);
+   await periodPage.waitForFunction(error=>document.querySelector('#restore-notice').textContent.endsWith(error),error);
+   assert.equal(await periodPage.locator('[data-ref="F18"] .value').textContent(),lastValidSold);
+  };
+  await failedRestore(/Total KWH Sold:.*returned no rows/);
   fixture('reader-offline');
+  await failedRestore(/reporting database connection failed/);
   const offline=await periodPage.request.get(reportUrl);
   assert.equal(offline.status(),503);
   assert.match(await offline.text(),/Reporting months are unavailable/);

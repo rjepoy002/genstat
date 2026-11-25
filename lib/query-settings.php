@@ -224,6 +224,7 @@ function qs_period_preview(array $layout,bool $onlyTotal=false,bool $strict=fals
    if(preg_match('/\b[12][0-9]{3}(0[1-9]|1[0-2])\b/',$config['sql']))
     throw new QuerySettingsError('Review the fixed reporting month in SQL Query Settings.');
    $result=$results[$config['sql']]??=qs_execute($config['sql'],$month);
+   if($strict&&!$result['rows'])throw new QuerySettingsError('The saved SQL query returned no rows for this reporting period.');
    qs_validate_result_month($result,$month);
    $area??=qs_area_metadata();
    $match=qs_match($layout,$config,$result,$area['areas'],$area['areaMappings']);
@@ -239,7 +240,9 @@ function qs_period_preview(array $layout,bool $onlyTotal=false,bool $strict=fals
   }catch(mysqli_sql_exception|QuerySettingsError $e){
    if($strict){
     if($e instanceof QuerySettingsError)throw new QuerySettingsError($rows[$key]['label'].': '.$e->getMessage(),0,$e);
-    throw new QuerySettingsError($rows[$key]['label'].': The saved SQL query could not be executed.',0,$e);
+    $failure=in_array($e->getCode(),[1044,1045,1049,2002,2003,2005,2006,2013],true)
+     ?'The reporting database connection failed.':'The saved SQL query could not be executed.';
+    throw new QuerySettingsError($rows[$key]['label'].': '.$failure,0,$e);
    }
    $warnings[]=['cell'=>'A'.$rows[$key]['row'],'formula'=>$rows[$key]['label'],
     'message'=>'SQL refresh failed. Last valid values are used where available.'];

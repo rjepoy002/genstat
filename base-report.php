@@ -14,7 +14,8 @@ try{
   header('Content-Type: application/json');$body=json_decode(file_get_contents('php://input'),true,512,JSON_THROW_ON_ERROR);
   if(!base_report_valid_month($body['month']??null)||!is_string($body['csrf']??null)||!hash_equals(base_report_csrf($body['month']),$body['csrf']))throw new RuntimeException('Invalid session token.');
  }
- $months=qs_available_months();
+ $restoring=$post&&in_array($body['action']??null,['restore-report','undo-restore'],true);
+ $months=$restoring&&($_SESSION['baseReportMonth']??null)===$body['month']?[$body['month']]:qs_available_months();
  $loading=$post&&($body['action']??null)==='load-period';
  if($loading&&!base_report_valid_month($body['targetMonth']??null))throw new QuerySettingsError('Select an available reporting month.');
  $month=qs_select_month($months,$post?($loading?$body['targetMonth']:$body['month']):($_GET['month']??null),$_SESSION['baseReportMonth']??null);
@@ -55,6 +56,7 @@ try{
   if(isset($body['previewToken'])){
    if(!is_string($body['previewToken'])||!hash_equals(qs_period_preview_token($l,$preview,$total),$body['previewToken']))throw new RuntimeException('The report preview changed. Reload the reporting period.');
   }else{
+   if($restoring)throw new RuntimeException('Reload the reporting period before restoring it.');
    if($preview||$total)throw new RuntimeException('Missing report preview authorization.');
    $reportSql=base_report_sql($l,true);$total=$reportSql['total'];
   }
@@ -119,61 +121,11 @@ try{
    echo $json;exit;
   }
   if(in_array($body['action'],['restore-report','undo-restore'],true)){
-   $undo=$body['action']==='undo-restore';
-   $current=['values'=>$values,'formulas'=>$formulas,'sqlReplacements'=>$replacements,'sqlSources'=>qs_verified_value_sources($l,$values,$body['sqlSources']??[]),'preview'=>$preview,'total'=>$total];
-   if($undo){
-    $operation=$_SESSION['baseRestoreOperation'][$scope]??null;
-    if(!$operation||($body['undoToken']??null)!==$operation['token']||qs_stable_hash($current)!==$operation['restoredHash'])throw new RuntimeException('The report changed after restoration. Undo Restore cannot replace newer edits.');
-    $next=$operation['previous'];
-    $token=null;
-   }else{
-    // Each report period uses the validated reference workbook. Removing all
-    // overlays exposes its exact formulas, including expanded shared formulas.
-    $next=$current;
-    $next['formulas']=$next['sqlReplacements']=$next['preview']=[];
-    $sql=base_report_sql($l,false,true);
-    $l['sqlManualTargets']=$_SESSION['baseSqlManualTargets'][$scope]=$sql['sqlTargets'];
-    $next['total']=$sql['total'];
-    $targets=[];
-    foreach($sql['matchedRows'] as $row)foreach($row['changes'] as $ref=>$change){
-     if(isset($targets[$ref]))throw new RuntimeException('Multiple saved configurations target '.$ref.'.');
-     $targets[$ref]=true;
-     if($change['formulaReplacement']){
-      $prior=$replacements[$ref]??null;
-      $next['sqlReplacements'][$ref]=$prior&&$prior['mappingRevision']===$row['revision']&&$prior['queryKey']===$row['config']['queryKey']&&$prior['value']===$change['value']
-       ?$prior:sql_replacement_issue($l,$ref,$change['value'],$row['config'],$row['revision']);
-     }else{
-      $next['values'][$ref]=$change['value'];
-      $next['sqlSources'][$ref]=qs_value_source($l,$ref,$change['value']);
-     }
-    }
-    $token=qs_stable_hash($current)===qs_stable_hash($next)?null:bin2hex(random_bytes(16));
-   }
-   $calculation=base_report_calculate($l,$next['values']+$next['preview'],$next['formulas'],$next['sqlReplacements'],$next['total']);
-   if(!$undo&&$calculation['errors']){
-    $previous=base_report_calculate($l,$values+$preview,$formulas,$replacements,$total);
-    $newErrors=array_diff_assoc($calculation['errors'],$previous['errors']);
-    if($newErrors)throw new RuntimeException('Restored calculation failed at '.array_key_first($newErrors).': '.reset($newErrors));
-   }
-   if(base_report_read_draft($l)['revision']!==$draft['revision'])throw new RuntimeException('Another window saved this report. Reload before editing.');
-   $response=array_map(fn($map)=>(object)$map,$next)+['month'=>$month,'calculation'=>$calculation,'previewToken'=>qs_period_preview_token($l,$next['preview'],$next['total']),'undoToken'=>$token,'draftChanged'=>qs_overlay_hash($next['values'],$next['formulas'],$next['sqlReplacements'])!==qs_overlay_hash($values,$formulas,$replacements)||$next['sqlSources']!==$current['sqlSources']];
-   if(!$undo){$response['sqlTargets']=(object)$sql['sqlTargets'];$response['configuredRows']=$sql['configuredRows'];$response['coopSyncWarning']=$sql['coopSyncWarning'];}
-   json_encode($calculation,JSON_THROW_ON_ERROR);
-   $audit=base_report_formula_audit($l);
-   $beforeContent=$formulas+array_column($replacements,'value','ref');
-   $afterContent=$next['formulas']+array_column($next['sqlReplacements'],'value','ref');
-   if($beforeContent!==$afterContent)$audit=base_report_append_formula_audit($l,$draft['revision'],$beforeContent,$afterContent,$undo?'Undo report restoration':'Restore report formulas');
-   $response['formulaAudit']=$audit;
-   $json=json_encode($response+base_sql_manual_public($l),JSON_THROW_ON_ERROR);
-   // Authorize only the exact validated result after the entire rebuild succeeds.
-   foreach(array_diff_key($draft['sqlReplacements'],$next['sqlReplacements']) as $ref=>$record)$_SESSION['sqlRestoreGrants'][$scope][$ref]=true;
-   foreach($next['sqlReplacements'] as $record)$_SESSION['sqlReplacementGrants'][$record['signature']]=true;
-   $removed=array_fill_keys(array_keys(array_diff_key($formulas+$draft['formulas'],$next['formulas'])),null);
-   $_SESSION['baseRestoredFormulaGrants'][$scope]=$next['formulas']+$removed;
-   unset($_SESSION['baseManualFormulaUndo'][$scope]);
-   if($undo)unset($_SESSION['baseRestoreOperation'][$scope]);
-   elseif($token!==null)$_SESSION['baseRestoreOperation'][$scope]=['token'=>$token,'previous'=>$current,'restoredHash'=>qs_stable_hash($next)];
-   echo $json;exit;
+   require_once __DIR__.'/lib/base-report-restore.php';
+   $current=['values'=>$values,'formulas'=>$formulas,'sqlReplacements'=>$replacements,
+    'sqlSources'=>qs_verified_value_sources($l,$values,$body['sqlSources']??[]),'preview'=>$preview,'total'=>$total];
+   $token=$body['undoToken']??null;
+   echo base_report_restore($l,$draft,$current,$body['action']==='undo-restore',is_string($token)?$token:null);exit;
   }
   if($body['action']==='export'){
    $l['recoveryState']=base_report_recovery_state($l);
@@ -232,16 +184,19 @@ $coordinateClass='excel-coordinate bg-slate-100 font-medium text-slate-600 dark:
 <header class="flex items-center border-b border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-800"><strong>PALECO <span>GenStat</span></strong><label class="report-month">Year <select id="report-year"><?php foreach($years as $year):?><option value="<?=bh($year)?>" <?=$year===substr($month,0,4)?'selected':''?>><?=bh($year)?></option><?php endforeach;?></select></label>
 <label class="report-month">Month <select id="report-month"><?php foreach(array_reverse($months) as $option):if(substr($option,0,4)!==substr($month,0,4))continue;?><option value="<?=bh($option)?>" <?=$option===$month?'selected':''?>><?=bh(strtok(base_report_month_label($option),' '))?></option><?php endforeach;?></select></label>
 <span id="report-period" aria-live="polite"><?=bh($monthLabel)?></span><div class="report-toolbar ml-auto flex shrink-0 items-center gap-1" role="group" aria-label="Report actions">
- <button id="report-export" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150" aria-label="Export Excel" data-tooltip="Export Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm0 0v6h6m-8 3v6m-3-3 3 3 3-3"/></svg></button>
- <button id="recovered-sales-open" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150" aria-label="Recovered Sales" data-tooltip="Recovered Sales" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M8 13h2m4 0h2m-8 4h2m4 0h2"/></svg></button>
- <button id="save" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150" aria-label="Save Draft" data-tooltip="Save Draft"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h13l4 4v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm3 0v6h9V3m1 18v-8H7v8"/></svg><span class="save-spinner" aria-hidden="true"></span></button>
- <button id="report-formula-history" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150" aria-label="Formula Edit History" title="Formula Edit History" data-tooltip="Formula Edit History" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.6 6.4M3 5v7h7m2-5v5l4 2"/></svg></button>
- <button id="sql-settings-open" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150" aria-label="Settings" data-tooltip="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-1 4 3 1 2 3 3-1 3 1 2-3 3-1-1-4 2-2-2-3-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+ <button id="report-export" type="button" class="report-icon inline-flex report-labeled-action h-9 items-center justify-center gap-2 rounded-lg font-medium transition-colors duration-150" aria-label="Export Excel" data-tooltip="Export Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 9v12m6-12v12"/></svg><span class="report-action-label">Export Excel</span></button>
+ <span class="report-toolbar-divider" aria-hidden="true"></span>
+ <button id="save" type="button" class="report-icon inline-flex report-labeled-action h-9 items-center justify-center gap-2 rounded-lg font-medium transition-colors duration-150" aria-label="Save Draft" data-tooltip="Save Draft"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h13l4 4v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm3 0v6h9V3m1 18v-8H7v8"/></svg><span class="save-spinner" aria-hidden="true"></span><span class="report-action-label">Save</span></button>
+ <span class="report-toolbar-divider" aria-hidden="true"></span>
+ <button id="recovered-sales-open" type="button" class="report-icon inline-flex report-labeled-action h-9 items-center justify-center gap-2 rounded-lg font-medium transition-colors duration-150" aria-label="Recovered Sales" data-tooltip="Recovered Sales" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M8 13h2m4 0h2m-8 4h2m4 0h2"/></svg><span class="report-action-label">Recovered Sales</span></button>
+ <button id="undo-formula" type="button" class="report-icon inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors duration-150" title="Undo SQL Cell Edit" aria-label="Undo SQL Cell Edit" data-tooltip="Undo SQL Cell Edit" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+ <button id="report-formula-history" type="button" class="report-icon inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors duration-150" aria-label="Formula Edit History" title="Formula Edit History" data-tooltip="Formula Edit History" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.6 6.4M3 5v7h7m2-5v5l4 2"/></svg></button>
+ <button id="sql-settings-open" type="button" class="report-icon inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors duration-150" aria-label="Settings" data-tooltip="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-1 4 3 1 2 3 3-1 3 1 2-3 3-1-1-4 2-2-2-3-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/></svg></button>
 </div></header>
-<div class="formula-bar"><output id="selection">Select a cell</output><button id="restore-sql-value" type="button" class="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold dark:border-slate-600" hidden>Restore SQL Value</button><div class="report-formula-field relative flex-1"><input id="formula" aria-label="Selected cell formula or value" readonly><span id="report-formula-colors" class="pointer-events-none absolute overflow-hidden whitespace-pre" aria-hidden="true"></span></div><button id="unlock" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-blue-600 dark:border-slate-600" aria-label="Unlock Formulas" aria-pressed="false" title="Unlock Formulas" data-tooltip="Unlock Formulas"><svg data-lock-icon="closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 11h12v10H6V11Zm3 0V7a3 3 0 0 1 6 0v4m-3 4v2"/></svg><svg data-lock-icon="open" hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 11h12v10H6V11Zm3 0V7a3 3 0 0 1 6 0m-3 8v2"/></svg></button>
+<div class="formula-bar"><output id="selection">Select a cell</output><button id="restore-sql-value" type="button" class="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold dark:border-slate-600" hidden>Restore SQL Value</button><div class="report-formula-field relative flex-1"><input id="formula" aria-label="Selected cell formula or value" readonly><span id="report-formula-colors" class="pointer-events-none absolute overflow-hidden whitespace-pre" aria-hidden="true"></span></div><button id="unlock" type="button" class="report-icon inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-blue-600 dark:border-slate-600" aria-label="Unlock Formulas" aria-pressed="false" title="Unlock Formulas" data-tooltip="Unlock Formulas"><svg data-lock-icon="closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 11h12v10H6V11Zm3 0V7a3 3 0 0 1 6 0v4m-3 4v2"/></svg><svg data-lock-icon="open" hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 11h12v10H6V11Zm3 0V7a3 3 0 0 1 6 0m-3 8v2"/></svg></button>
 <div class="report-toolbar formula-actions flex items-center gap-2" role="group" aria-label="Formula and totals actions">
- <button id="restore-sql" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 hover:bg-slate-100! hover:text-slate-900! focus-visible:ring-2 focus-visible:ring-blue-600 dark:border-gs-border! dark:bg-[var(--gs-header)]! dark:text-[var(--gs-text-secondary)]! dark:hover:bg-[var(--gs-hover)]! dark:hover:text-gs-text!" aria-label="Restore Template Formula" aria-describedby="restore-sql-tooltip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
- <button id="total-group-toggle" type="button" class="report-icon inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150" aria-expanded="false" aria-controls="genstat-report-table" aria-label="Show Totals" data-tooltip="Show Totals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M15 5v14"/><path class="total-chevron" d="m8 9 3 3-3 3"/></svg></button>
+ <button id="restore-sql" type="button" class="report-icon inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors duration-150" aria-label="Restore Template Formula" aria-describedby="restore-sql-tooltip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+ <button id="total-group-toggle" type="button" class="report-icon inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors duration-150" aria-expanded="false" aria-controls="genstat-report-table" aria-label="Show Totals" data-tooltip="Show Totals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M15 5v14"/><path class="total-chevron" d="m8 9 3 3-3 3"/></svg></button>
  <div id="restore-sql-tooltip" role="tooltip" class="pointer-events-none invisible absolute top-[calc(100%+6px)] right-0 z-[5] w-72 max-w-[calc(100vw-24px)] rounded-sm bg-slate-800 px-2 py-1 text-[11px]/[1.4] text-white dark:bg-slate-700">Restore original Excel formulas and reapply saved SQL and report formulas.</div>
 </div><span id="report-reference-note" class="text-xs text-slate-600 dark:text-slate-300" role="status" hidden></span></div>
 <main class="report-scroll" tabindex="0" aria-label="Scrollable KWH report"><table id="genstat-report-table" data-total-collapsed="true" data-configured-rows="<?=bh(json_encode($reportSql['configuredRows'],JSON_THROW_ON_ERROR))?>" aria-label="<?=bh($monthLabel)?> KWH purchased, sold and system losses"><colgroup><col class="excel-gutter"><?php foreach($widths as $column=>$w):?><col data-column="<?=col_name($column)?>" data-excel-column="<?=$column?>" <?=!empty($hiddenColumns[$column])?'hidden':''?> <?=$column>=$totalStart?'data-total-column':''?> style="width:<?=$w?>px"><?php endforeach;?></colgroup>
@@ -259,13 +214,11 @@ $headingText=$fullHeading?implode("\n",array_column($areaHeaders[$c]['fragments'
 
 <?php if($fullHeading):?><span class="value"><?=bh($headingText)?></span><?php elseif($rowToggle):?><button type="button" class="report-row-toggle block w-full cursor-pointer" aria-pressed="false"><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span></button><?php elseif($cell['editable']&&!property_exists($calc['recoveredSales'],$ref)):?><input <?=array_key_exists($ref,$total)?'readonly':''?> aria-label="<?=bh($ref.' '.$cell['classification'])?>" data-ref="<?=$ref?>" value="<?=bh(array_key_exists($ref,$total)?($total[$ref]??''):($draft['values'][$ref]??($month!==BASE_REPORT_LEGACY_MONTH&&is_numeric($cell['value'])?'':$cell['value'])))?>"><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span><?php else:?><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span><?php endif;?></<?=$tag?>>
 <?php endforeach;?></tr><?php endfor;?></tbody></table></main>
-<div class="report-notice flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
- <div class="report-draft flex flex-wrap items-center gap-2"><span id="status" role="status"><?=$draft['revision']>0?'Draft loaded':'No saved report data.'?><?=$soldUnresolved?' Total KWH Sold is unavailable.':($soldFallback?' Total KWH Sold uses the last valid SQL values.':'')?></span><span id="coop-sync-status" role="status" class="text-red-700 dark:text-red-400"><?=bh($reportSql['coopSyncWarning']??'')?></span><span id="restore-notice" role="status" class="rounded-md bg-emerald-50 px-2 py-1 text-emerald-900 empty:absolute empty:p-0 data-[error]:bg-red-50 data-[error]:text-red-900 dark:bg-emerald-950 dark:text-emerald-100 dark:data-[error]:bg-red-950 dark:data-[error]:text-red-100"></span><button id="undo-formula" type="button" hidden>Undo Formula Edit</button><button id="undo-restore" class="rounded-md border border-slate-300! px-2! py-1! font-semibold focus-visible:ring-2 focus-visible:ring-blue-600 dark:border-slate-600!" type="button" hidden>Undo Restore</button><button id="coop-resync" type="button">Resync COOP</button><button id="report-retry" type="button" hidden>Retry</button></div>
- <details id="report-notes"><summary>Workbook notes · <span id="report-warning-count"><?=count($calc['warnings'])?></span> calculation warnings<span id="report-error-count" hidden></span> · Input legend</summary>
-  <div class="report-notes-content"><p>Blue designated inputs can receive SQL values through SQL Query Settings. Formula cells are protected; selecting a cell shows its classification. Blue input indicators are retained. Total KWH Sold uses the saved SQL configuration. Test Query validates changes before Apply &amp; Save.</p><p><strong>MAN</strong> &mdash; Manually overridden SQL value</p><ul id="warnings"></ul></div>
- </details>
-</div>
-<footer><?=bh($s['name'].'!'.$renderedRange)?> · <span id="fit-status">Report table</span> · <span id="cell-kind">Formula cells protected</span></footer>
+<footer class="flex items-center justify-between gap-2 w-full">
+ <div class="min-w-0"><?=bh($s['name'].'!'.$renderedRange)?> · <span id="fit-status">Report table</span> · <span id="cell-kind">Formula cells protected</span></div>
+ <div class="report-draft flex items-center justify-end gap-2 text-right text-xs text-slate-600 dark:text-slate-300"><div class="report-footer-notices flex min-w-0 flex-wrap items-center justify-end gap-2"><span id="coop-sync-status" role="status" class="text-red-700 dark:text-red-400"><?=bh($reportSql['coopSyncWarning']??'')?></span><span id="restore-notice" role="status" class="rounded-md bg-emerald-50 px-2 py-1 text-emerald-900 empty:absolute empty:p-0 data-[error]:bg-red-50 data-[error]:text-red-900 dark:bg-emerald-950 dark:text-emerald-100 dark:data-[error]:bg-red-950 dark:data-[error]:text-red-100"></span><button id="undo-restore" class="rounded-md border border-slate-300! px-2! py-1! font-semibold focus-visible:ring-2 focus-visible:ring-blue-600 dark:border-slate-600!" type="button" hidden>Undo Restore</button><button id="report-retry" type="button" hidden>Retry</button></div><div class="report-save-state inline-flex items-center justify-end gap-1"><svg id="report-save-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="m20 6-11 11-5-5"/></svg><span id="status" role="status"><?=$draft['revision']>0?'Draft loaded':'No saved report data.'?><?=$soldUnresolved?' Total KWH Sold is unavailable.':($soldFallback?' Total KWH Sold uses the last valid SQL values.':'')?></span></div></div>
+ <div hidden><span id="report-warning-count"></span><span id="report-error-count" hidden></span><ul id="warnings"></ul></div>
+</footer>
 <div id="report-loading-overlay" class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm" role="status" aria-live="polite" hidden>
  <div class="report-loading-card flex flex-col items-center rounded-2xl text-center shadow-2xl">
   <div class="report-loading-spinner animate-spin" aria-hidden="true"></div>

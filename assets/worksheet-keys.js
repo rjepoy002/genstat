@@ -1,11 +1,13 @@
 'use strict';
-window.handleWorksheetEditKey=function(event,{cell,candidates,coordinates,commit,cancel,focus,leave}){
+window.handleWorksheetEditKey=function(event,{cell,candidates,coordinates,commit,cancel,focus,leave,arrows=false}){
  if(event.defaultPrevented||event.isComposing||event.ctrlKey||event.altKey||event.metaKey)return;
  if(event.key==='Escape'){
   event.preventDefault();cancel();return;
  }
- if(event.key!=='Enter'&&event.key!=='Tab')return;
- const horizontal=event.key==='Tab',direction=event.shiftKey?-1:1;
+ const arrow=arrows&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key);
+ if(!arrow&&event.key!=='Enter'&&event.key!=='Tab')return;
+ const horizontal=event.key==='Tab'||event.key==='ArrowLeft'||event.key==='ArrowRight';
+ const direction=arrow?(['ArrowLeft','ArrowUp'].includes(event.key)?-1:1):(event.shiftKey?-1:1);
  const {row,column,rowEnd=row,columnEnd=column}=coordinates(cell);
  let next=null,distance=Infinity;
  for(const candidate of candidates()){
@@ -20,7 +22,7 @@ window.handleWorksheetEditKey=function(event,{cell,candidates,coordinates,commit
   }
  }
  event.preventDefault();
- commit();
+ if(!arrow)commit();
  if(next)focus(next);
- else if(horizontal)leave(direction);
+ else if(horizontal&&!arrow)leave?.(direction);
 };

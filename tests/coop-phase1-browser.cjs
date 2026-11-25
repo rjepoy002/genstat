@@ -146,7 +146,7 @@ const db=action=>execFileSync(php,[path.join(root,'tests/coop-phase1-fixture.php
   db('check-export');
   db('billing-off');
   try{
-   await page.getByRole('button',{name:'Resync COOP'}).click();
+   await page.evaluate(()=>window.genstatReport.refreshCoop());
    await page.locator('#coop-sync-status').getByText(/COOP sync failed/).waitFor();
    assert.equal(await coopCell('C26').locator('.value').textContent(),'12.35');
    assert.equal((await api('accounts-list')).status,403);
@@ -155,8 +155,8 @@ const db=action=>execFileSync(php,[path.join(root,'tests/coop-phase1-fixture.php
    assert.deepEqual([unavailable.kwh,unavailable.status],[null,'Unable to retrieve data']);
    await page.locator('#sql-settings-close').click();
   }finally{db('billing-on');}
-  await page.getByRole('button',{name:'Resync COOP'}).click();
-  await page.waitForFunction(()=>!document.querySelector('#coop-resync').disabled&&document.querySelector('#coop-sync-status').textContent==='');
+  await page.evaluate(()=>window.genstatReport.refreshCoop());
+  await page.waitForFunction(()=>document.querySelector('#coop-sync-status').textContent==='');
   await ready();
   assert.equal(await management.getByLabel('COOP account code').inputValue(),'');
   for(const [code,area,response] of [
@@ -459,16 +459,21 @@ const db=action=>execFileSync(php,[path.join(root,'tests/coop-phase1-fixture.php
   assert.equal(await coopCell('M26').getAttribute('data-sql-manual'),'true');
   assert.equal(await coopCell('M26').locator('.value').textContent(),'7.25');
   await ready();
-  assert.equal((await api('accounts-add',{code:'HTTP-EXTRA',area:cagayancillo})).status,200);
+  await areaSelect.selectOption(String(cagayancillo));
+  await management.getByLabel('COOP account code').fill('HTTP-EXTRA');
+  await management.getByRole('button',{name:'Add Account',exact:true}).click();
+  await management.getByText('Account added.',{exact:true}).waitFor();
   await page.locator('#sql-settings-close').click();
-  await page.locator('#coop-resync').click();
   await page.evaluate(()=>window.genstatReport.ready());
   assert.equal(await coopCell('M26').locator('.value').textContent(),'7.25');
   assert.match(await coopCell('M26').getAttribute('title'),/Latest SQL: 42.00/);
-  await cagayancilloInput.focus();
-  await page.locator('#restore-sql-value').click();
-  await page.locator('#report-confirmation').getByRole('button',{name:'Restore SQL Value'}).click();
-  await page.evaluate(()=>window.genstatReport.ready());
+  await page.locator('#restore-sql').click();
+  await page.locator('#report-confirmation').getByRole('button',{name:'Restore & Recalculate'}).click();
+  await page.getByText('Report formulas and SQL values restored successfully.').waitFor();
+  assert.equal(await coopCell('M26').getAttribute('data-sql-applied'),'true');
+  assert.equal(await coopCell('M26').locator('.value').textContent(),'42.00');
+  assert.equal(await page.locator('#status').textContent(),'Report restored and saved');
+  await page.reload();
   assert.equal(await coopCell('M26').getAttribute('data-sql-applied'),'true');
   assert.equal(await coopCell('M26').locator('.value').textContent(),'42.00');
   await ready();
@@ -514,6 +519,7 @@ const db=action=>execFileSync(php,[path.join(root,'tests/coop-phase1-fixture.php
   assert.equal((await security('appearance')).status,403);
   const pinDialog=page.locator('#settings-pin-dialog'),firstDigit=pinDialog.getByLabel('PIN digit 1',{exact:true});
   await page.locator('#sql-settings-open').click();
+  await pinDialog.locator('input:not(:disabled)').first().waitFor();
   await firstDigit.press('A');
   assert.equal(await firstDigit.inputValue(),'');
   await firstDigit.press('0');

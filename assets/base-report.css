@@ -15,26 +15,38 @@ header strong{font-size:16px;white-space:nowrap}header strong span{color:#147891
 button{font:inherit;padding:4px 9px;border:1px solid #c8d2de;border-radius:3px;background:#fff;color:#24445f;cursor:pointer;white-space:nowrap}button:hover:not(:disabled){background:#edf5fa}button:disabled{cursor:default;color:#94a0ac}header a{margin-left:auto;color:#315c70;font-size:11px}
 .formula-bar{display:flex;gap:8px;padding:3px 12px;background:#fff;align-items:center;flex-shrink:0}.formula-bar output{min-width:75px;font-size:11px}.formula-bar input{flex:1;min-width:0;height:25px;font:12px Arial,sans-serif;padding:3px 6px;border:1px solid #cbd5df;border-radius:2px}
 body>header{position:relative;z-index:2}
-:is(.report-toolbar,.formula-bar) .report-icon{position:relative;flex:none;padding:0;color:#475569;border-color:#e2e8f0}
+:is(.report-toolbar,.formula-bar) .report-icon{position:relative;flex:none;padding:0;color:#475569;border-color:#dce3ea;background:transparent}
 :is(.report-toolbar,.formula-bar) .report-icon:hover:not(:disabled){background:#f1f5f9;color:#0f172a}
-:is(.report-toolbar,.formula-bar) .report-icon:disabled{color:#94a3b8}
+:is(.report-toolbar,.formula-bar) .report-icon:disabled{color:#94a3b8;opacity:.65}
 :is(.report-toolbar,.formula-bar) .report-icon:focus-visible{outline:2px solid #3978b6;outline-offset:1px}
-.report-icon svg{width:16px;height:16px}
+.report-icon svg{width:18px;height:18px;flex:none}
+body>header .report-toolbar{max-width:100%;flex-wrap:wrap}
+.report-toolbar .report-labeled-action{padding-inline:9px;font-size:13px;font-weight:500}
+.report-toolbar-divider{flex:none;width:1px;height:24px;margin-inline:2px;background:#e2e8f0}
+.report-toolbar #report-export{background:#ecfdf3;border-color:#bbdfcb;color:#166534}
+.report-toolbar #report-export:hover:not(:disabled){background:#dcf6e7;color:#14532d}
+.report-toolbar :is(#save,#recovered-sales-open){border-color:transparent}
+@media(max-width:390px){
+ .report-toolbar :is(#save,#report-export){width:36px;padding:0}
+ .report-toolbar :is(#save,#report-export) .report-action-label{display:none}
+}
+.report-icon[hidden]{display:none}
 .report-icon[data-tooltip]::after{position:absolute;top:calc(100% + 6px);right:0;z-index:3;white-space:nowrap;padding:4px 7px;border-radius:4px;background:#173650;color:white;font:11px/1.4 Arial,sans-serif;visibility:hidden;pointer-events:none}
 .report-icon[data-tooltip]::after{content:attr(data-tooltip)}
 .report-icon:hover::after,.report-icon:focus-visible::after,#restore-sql:hover~#restore-sql-tooltip,#restore-sql:focus-visible~#restore-sql-tooltip{visibility:visible}
 .formula-actions{position:relative;flex:none;margin-left:auto}
 .total-chevron{transform-box:fill-box;transform-origin:center;transition:transform 150ms ease}
 #total-group-toggle[aria-expanded="true"] .total-chevron{transform:rotate(180deg)}
-.save-spinner{display:none;width:14px;height:14px;border:2px solid #c8d2de;border-top-color:#244d6c;border-radius:50%;animation:spin 750ms linear infinite}
+.save-spinner{display:none;width:18px;height:18px;border:2px solid #c8d2de;border-top-color:#244d6c;border-radius:50%;animation:spin 750ms linear infinite}
 #save[aria-busy="true"] svg{display:none}
 #save[aria-busy="true"] .save-spinner{display:block}
 @media(prefers-reduced-motion:reduce){.report-icon,.total-chevron{transition:none}.save-spinner{animation:none}}
-.report-notice{flex-shrink:0;min-width:0}
 .report-draft{min-width:0;overflow-wrap:anywhere}
-#report-notes{margin-left:auto;min-width:0;max-width:min(100%,720px)}
-#report-notes summary{cursor:pointer}
-.report-notes-content{max-height:25dvh;overflow:auto;line-height:1.45}
+.report-save-state{min-width:min(100%,17ch)}
+#report-save-check{flex:none;color:#15803d}
+#report-save-check[hidden]{display:none}
+.report-footer-notices #coop-sync-status:empty,
+.report-footer-notices:not(:has([role="status"]:not(:empty),button:not([hidden]))){display:none}
 .report-scroll{flex:1;min-height:0;overflow:auto;background:#fff;margin:2px 8px 3px;isolation:isolate;border:1px solid #c8d3df;scrollbar-gutter:stable}
 table{--header-height:24px;border-collapse:separate;table-layout:fixed;border-spacing:0;width:max-content;background:#fff;font-size:11px;font-family:Arial,sans-serif;font-variant-numeric:tabular-nums}
 #genstat-report-table,.appearance-preview table{font-size:var(--report-font-size,12px)}
@@ -74,14 +86,14 @@ td[data-classification="database_input"]{background:#edf8fc!important}
 .value{display:block;white-space:inherit}
 #genstat-report-table tbody .spacer-row{height:5px}#genstat-report-table tbody .spacer-row td{height:5px;line-height:0;padding:0!important;border-bottom:0!important}.spacer-row .value{display:none}
 #genstat-report-table td input{position:absolute;inset:0;width:100%;height:100%;font:inherit;text-align:inherit;font-variant-numeric:tabular-nums;color:inherit;background:inherit;border:0;padding:2px var(--report-cell-padding,7px);opacity:0}
-#genstat-report-table td:focus-within input{opacity:1}#genstat-report-table td:focus-within input+.value{visibility:hidden}
+#genstat-report-table td input:not([readonly]):focus{opacity:1}#genstat-report-table td input:not([readonly]):focus+.value{visibility:hidden}
 td:focus,th:focus,td.selected,th.selected{outline:2px solid #078b89;outline-offset:-2px}
 footer{padding:3px 12px;color:#526b80;font-size:10px;flex-shrink:0}.error{color:#a32a20}
 td[data-sql-applied="true"]{background:#e7f5f1!important}td[data-sql-applied="true"] .value::before{content:'SQL ';font-size:8px;color:#087565}.formula-bar{flex-wrap:wrap}.report-formula-field{min-width:100px}
 #genstat-report-table td[data-sql-manual="true"]{background:#fffbeb!important}
 #genstat-report-table td[data-sql-manual="true"] .value::before{content:'MAN ';font-size:8px;color:#b45309}
 
-@media(max-width:700px){header{gap:6px;padding:5px 8px}header>span{font-size:10px}header a{font-size:10px}.formula-bar{gap:5px;padding:3px 6px}.formula-bar output{min-width:45px}.formula-bar button{padding:5px}.report-notice{font-size:11px;padding-inline:6px}.report-scroll{margin:2px 4px}table{font-size:12px}tr{height:25px}.spacer-row{height:5px}th,td{line-height:17px}footer{padding:3px 6px}}
+@media(max-width:700px){header{gap:6px;padding:5px 8px}header>span{font-size:10px}header a{font-size:10px}.formula-bar{gap:5px;padding:3px 6px}.formula-bar output{min-width:45px}.formula-bar button{padding:5px}.report-draft{font-size:11px}.report-scroll{margin:2px 4px}table{font-size:12px}tr{height:25px}.spacer-row{height:5px}th,td{line-height:17px}footer{padding:3px 6px}}
 
 /* Report and appearance preview share the same selection and semantic palette. */
 .appearance-preview table{min-width:260px;width:100%}
@@ -93,10 +105,15 @@ html.dark :is(body>header,.formula-bar){background:var(--gs-toolbar);border-colo
 html.dark .report-scroll{background:var(--gs-surface);border-color:var(--gs-border);scrollbar-color:var(--gs-hover) var(--gs-bg)}
 html.dark :is(.report-month select,.formula-bar input,button){background:var(--gs-header);color:var(--gs-text);border-color:var(--gs-border)}
 html.dark button:hover:not(:disabled){background:var(--gs-hover)}
-html.dark :is(.report-toolbar,.formula-bar) .report-icon{color:var(--gs-text-secondary);border-color:var(--gs-border)}
+html.dark :is(.report-toolbar,.formula-bar) .report-icon{color:var(--gs-text-secondary);border-color:var(--gs-border);background:transparent}
 html.dark :is(.report-toolbar,.formula-bar) .report-icon:hover:not(:disabled){color:var(--gs-text);background:var(--gs-hover)}
 html.dark :is(.report-toolbar,.formula-bar) .report-icon:is([aria-pressed="true"],[aria-expanded="true"]){background:var(--gs-hover);color:var(--gs-text)}
 html.dark :is(.report-toolbar,.formula-bar) .report-icon:disabled,html.dark button:disabled{color:var(--gs-text-muted)}
+html.dark .report-toolbar-divider{background:var(--gs-border)}
+html.dark .report-toolbar #report-export{background:#173a2a;border-color:#315242;color:#b3dec2}
+html.dark .report-toolbar #report-export:hover:not(:disabled){background:#204a35;color:#d0efda}
+html.dark .report-toolbar :is(#save,#recovered-sales-open){border-color:transparent}
+html.dark #report-save-check{color:#86cf9e}
 html.dark :is(button,select,input,summary):focus-visible{outline:2px solid var(--gs-selection);outline-offset:2px}
 html.dark :is(.report-icon[data-tooltip]::after,#restore-sql-tooltip){background:var(--gs-toolbar);color:var(--gs-text);border:1px solid var(--gs-border)}
 html.dark #genstat-report-table .report-row-toggle{background:transparent;color:inherit}
@@ -107,7 +124,6 @@ html.dark .report-loading-card p{color:var(--gs-text-secondary)}
 html.dark .report-loading-spinner{border-color:var(--gs-border);border-top-color:var(--gs-selection)}
 html.dark #restore-notice:not(:empty){background:var(--gs-total-bg);color:var(--gs-text)}
 html.dark #restore-notice[data-error]:not(:empty){background:var(--gs-error-bg);color:var(--gs-error)}
-html.dark .report-notes-content{background:var(--gs-surface);color:var(--gs-text-secondary);border-color:var(--gs-border)}
 :is(html.dark #genstat-report-table,.appearance-preview[data-theme="dark"] table){background:var(--gs-surface);color:var(--gs-text)}
 :is(html.dark #genstat-report-table,.appearance-preview[data-theme="dark"]) th{
  background:var(--gs-header)!important;border-color:var(--gs-border)!important;color:var(--gs-text-secondary)!important

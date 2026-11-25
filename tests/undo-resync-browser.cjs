@@ -48,6 +48,8 @@ try{
  await page.locator('#formula-undo').click();await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Another window saved'),{},{timeout:60000});assert(fs.readFileSync(draft).equals(concurrent));assert.equal(await input.inputValue(),'concurrent-base');assert(fs.readFileSync(active).equals(liveWorkbook));
  console.log('PASS: Undo rejects concurrent draft revisions without overwriting newer saved data or the workbook');
  const resync=page.locator('#resync'),resyncDialog=page.locator('#resync-dialog'),confirm=page.locator('#resync-confirm');
+ assert.equal((await resync.textContent()).trim(),'Resync');
+ assert.equal(await resync.evaluate(button=>button.offsetHeight),36);
  async function preview(){const response=page.waitForResponse(r=>r.url().includes('action=resync-preview'));await resync.click();await page.waitForFunction(()=>!document.querySelector('#resync-confirm').disabled,{},{timeout:60000});assert(await resyncDialog.evaluate(e=>e.open));return (await response).json();}
  const unauthorized=await page.evaluate(async()=>{const r=await fetch('api.php?action=resync&period=2026-06&sheet=Jun26',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':document.querySelector('meta[name="csrf-token"]').content},body:'{}'});return r.status;});assert.equal(unauthorized,409);assert(fs.readFileSync(draft).equals(concurrent));
  console.log('PASS: server requires an explicit, version-bound Resync confirmation token');

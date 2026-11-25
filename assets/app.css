@@ -68,3 +68,12 @@ html.dark :is(.dialog-message.error-message,.warning-count.has-errors,.template-
 
 #sheet .cell:focus{outline:2px solid #14764d;outline-offset:-2px;z-index:3}
 html.dark #sheet .cell:focus{outline-color:var(--gs-selection)}
+
+.compact-header .notification-strip>#resync{
+ width:auto;height:36px;min-height:36px;padding:0 9px;border-color:transparent;
+ border-radius:8px;background:transparent;color:#475569;font-size:13px;font-weight:500;
+}
+.compact-header .notification-strip>#resync:hover:not(:disabled){background:#e9efed;color:#0f172a}
+.compact-header .notification-strip>#resync:disabled{opacity:.65}
+html.dark .compact-header .notification-strip>#resync{color:var(--gs-text-secondary)}
+html.dark .compact-header .notification-strip>#resync:hover:not(:disabled){background:var(--gs-hover);color:var(--gs-text)}

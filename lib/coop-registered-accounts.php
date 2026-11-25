@@ -50,7 +50,7 @@ function coop_lookup_accounts(?array $connection,array $codes): array {
  return $matches+array_fill_keys($codes,['status'=>'Account not found']);
 }
 
-function coop_resolve_registered_accounts(mysqli $db,array $matches): array {
+function coop_resolve_registered_accounts(mysqli $db,array $matches,bool $persist=true): array {
  $changed=false;
  $db->begin_transaction();
  try{
@@ -78,7 +78,7 @@ function coop_resolve_registered_accounts(mysqli $db,array $matches): array {
    }
   }
   unset($row);
-  $db->commit();
+  if($persist)$db->commit();else $db->rollback();
  }catch(Throwable $error){$db->rollback();throw $error;}
  return [$accounts,$changed];
 }
@@ -190,13 +190,13 @@ function coop_registered_amount(?array $bill): array {
  return [bccomp($value,'0',strlen($parts[1]??''))===0?'0.00':$value,''];
 }
 
-function coop_registered_month(mysqli $db,?array $connection,string $month,bool $verifyEmpty=false): array {
+function coop_registered_month(mysqli $db,?array $connection,string $month,bool $verifyEmpty=false,bool $persistResolution=true): array {
  $codes=array_column($db->query('SELECT AcctCode FROM coop_registered_accounts')->fetch_all(MYSQLI_ASSOC),'AcctCode');
  $https=($connection['type']??null)==='https';
  $failed=false;$bills=[];
  if($https)[$matches,$failed]=coop_https_month($connection,$codes,$month);
  else $matches=coop_lookup_accounts($connection,$codes);
- [$accounts,$changed]=coop_resolve_registered_accounts($db,$matches);
+ [$accounts,$changed]=coop_resolve_registered_accounts($db,$matches,$persistResolution);
  if(!$https){
   try{$bills=coop_registered_billing($connection,coop_registered_active_numbers($accounts),$month,$verifyEmpty);}
   catch(PDOException|DomainException){$failed=true;}

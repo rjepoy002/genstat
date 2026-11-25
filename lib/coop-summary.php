@@ -55,22 +55,28 @@ function coop_summary_values(array $targets,array $accounts,array $previous,arra
 
 /** Period-local overlay shared by worksheet rendering, calculation and export. */
 function base_report_sql(array $layout,bool $onlyTotal=false,bool $strict=false): array {
+ $beforeFetch=base_sql_manual_state($layout);
  $report=qs_period_preview($layout,$onlyTotal,$strict);
  $scope=base_report_scope($layout);
- $entry=base_sql_manual_state($layout)['coopHistory']??$_SESSION['coopSummary'][$scope]??[];
+ $entry=$strict?[]:($beforeFetch['coopHistory']??$_SESSION['coopSummary'][$scope]??[]);
  $cached=$entry['values']??[];
  $values=$cached;$warning=null;$fresh=[];$history=null;
  try{
-  $targets=$layout['coopAreaTargets']??coop_summary_targets($layout);
-  if(!$targets)throw new DomainException('COOP summary area mapping requires review.');
   $source=null;
   try{
    [$path,$key]=coop_secret_location();
    $connection=coop_read_settings($path,$key)['connection'];
    if($connection&&$connection['type']==='https')$source=coop_connection_id($connection,$key);
-  }catch(DomainException|JsonException){$connection=null;}
+  }catch(DomainException|JsonException $e){
+   if($strict&&((isset($path)&&is_file($path))||getenv('GENSTAT_COOP_PHASE1_FILE')))
+    throw $e;
+   $connection=null;
+  }
+  if($strict&&$connection===null)return $report+['coopSyncWarning'=>null,'coopHistory'=>null];
+  $targets=$layout['coopAreaTargets']??coop_summary_targets($layout);
+  if(!$targets)throw new DomainException('COOP summary area mapping requires review.');
   $db=qs_db('writer');
-  try{[$accounts,,$billingFailed]=coop_registered_month($db,$connection,base_report_month($layout),true);}
+  try{[$accounts,,$billingFailed]=coop_registered_month($db,$connection,base_report_month($layout),true,!$strict);}
   finally{$db->close();}
   if($source!==null){
    $source=hash('sha256',serialize([$source,array_column($accounts,'AcctCode'),array_column($accounts,'GenstatAreaID')]));
@@ -88,15 +94,17 @@ function base_report_sql(array $layout,bool $onlyTotal=false,bool $strict=false)
   // existing eligibility rules still exclude deactivated or replaced accounts.
   $history=['values'=>$values,'numbers'=>$numbers,'source'=>$source];
   if(!$accounts&&$billingFailed)$history=$entry;
-  $_SESSION['coopSummary'][$scope]=$history;
+  if(!$strict)$_SESSION['coopSummary'][$scope]=$history;
  }catch(Throwable){
   $warning='COOP sync failed. Check the connection, registry, and report mapping. Last valid values are used where available.';
  }
+ if($strict&&$warning!==null)
+  throw new QuerySettingsError('COOP Consumption: '.str_replace(' Last valid values are used where available.','',$warning));
  $available=array_filter($values,fn($value)=>$value!==null);
  $report['total']=$available+$report['total'];
  $report['sqlTargets']=array_fill_keys(array_keys($available),'coop-registered-accounts')+$report['sqlTargets'];
- base_sql_manual_cache($layout,$fresh+$report['total']+$report['values'],
+ if(!$strict)base_sql_manual_cache($layout,$fresh+$report['total']+$report['values'],
   array_diff_key($report['sqlTargets'],array_fill_keys(array_keys($available),true))+
-  array_fill_keys(array_keys($fresh),'coop-registered-accounts'),$history);
- return $report+['coopSyncWarning'=>$warning];
+  array_fill_keys(array_keys($fresh),'coop-registered-accounts'),$history,$beforeFetch);
+ return $report+['coopSyncWarning'=>$warning,'coopHistory'=>$history];
 }

@@ -1,6 +1,15 @@
 'use strict';
 (()=>{
  const data=JSON.parse(document.querySelector('#report-data').textContent),status=document.querySelector('#status'),bar=document.querySelector('#formula'),unlock=document.querySelector('#unlock');
+ const saveCheck=document.querySelector('#report-save-check');
+ const successfulSaveMessages=new Set(['Draft saved','Manual override saved','Report restored and saved']);
+ const updateSaveCheck=()=>{
+  saveCheck.toggleAttribute('hidden',status.classList.contains('error')||!successfulSaveMessages.has(status.textContent));
+ };
+ new MutationObserver(updateSaveCheck).observe(status,{
+  childList:true,attributes:true,attributeFilter:['class']
+ });
+ updateSaveCheck();
  const confirmationDialog=document.querySelector('#report-confirmation');
  const confirmationTitle=document.querySelector('#report-confirmation-title');
  const confirmationWarning=document.querySelector('#report-confirmation-warning');
@@ -11,11 +20,11 @@
  function confirmAction(message,{restore=false,restoreSql=false,detail='',formulaUnlock=false,recoverySave=null}={}){
   if(confirmationDialog.open)return Promise.resolve(false);
   confirmationDialog.returnValue='';
-  confirmationTitle.textContent=restoreSql?'RESTORE SQL VALUE':recoverySave?'Confirm Recovered Sales Update':formulaUnlock?'Unlock All Formula Cells?':restore?'Restore Report Formulas?':'Confirm report action';
+  confirmationTitle.textContent=restoreSql?'RESTORE SQL VALUE':recoverySave?'Confirm Recovered Sales Update':formulaUnlock?'Unlock All Formula Cells?':restore?'Restore Report Formulas & SQL Values?':'Confirm report action';
   confirmationWarning.hidden=!restore&&!formulaUnlock;
   confirmationWarning.querySelector('span').textContent=formulaUnlock
    ?'Changes to formulas may affect calculated report values. All committed edits will be recorded in Formula Edit History.'
-   :'Any unsaved manual changes to affected cells will be replaced.';
+   :'All saved and unsaved manual overrides in affected SQL and formula cells will be replaced. Other manually entered values will remain unchanged.';
   confirmationDetail.hidden=!detail;
   confirmationDetail.textContent=detail;
   confirmationButton.textContent=restoreSql?'Restore SQL Value':recoverySave?'Confirm Save':formulaUnlock?'Unlock Formulas':restore?'Restore & Recalculate':'Continue';
@@ -55,6 +64,7 @@
  const undoFormula=document.querySelector('#undo-formula');
  const restoreSqlButton=document.querySelector('#restore-sql-value');
  const pendingManual=new Map();
+ const failedEdits=new Map();
  data.preview={};
  data.sqlManualOverrides??={};data.sqlLatest??={};
  const controlled=ref=>Object.hasOwn(data.total,ref);
@@ -79,6 +89,7 @@
  // Element-only zoom keeps native table layout and sticky cells in the same
  // coordinate system. Never zoom the browser or shrink desktop text below 10px.
  const table=document.querySelector('#genstat-report-table'),viewport=document.querySelector('.report-scroll');
+ const gridCellSelector=':is(td,th)[data-ref]';
  const spacerRows=new Map([...table.querySelectorAll('[data-spacer-candidate]')].map(row=>[Number(row.dataset.excelRow),{row,refs:[]}]));
  const renderedColumns=new Set([...table.querySelectorAll('col[data-excel-column]')].map(col=>Number(col.dataset.excelColumn)));
  for(const [ref,cell] of Object.entries(data.metadata)){
@@ -319,7 +330,24 @@
  table.addEventListener('focusin',e=>{
   const cell=e.target.closest('[data-classification]');
   if(cell)select(cell,!e.target.closest('.report-row-toggle'));
-  if(e.target.matches('input[data-ref]')&&(manual(e.target.dataset.ref)||sqlSource(e.target.dataset.ref)))e.target.select();
+ });
+ function focusGridCell(cell){
+  if(!cell.hasAttribute('tabindex'))cell.tabIndex=-1;
+  cell.focus({preventScroll:true});
+  const bounds=cell.getBoundingClientRect(),frame=viewport.getBoundingClientRect();
+  const top=frame.top+table.tHead.offsetHeight;
+  const left=cell.classList.contains('particulars')?frame.left:
+   Math.max(frame.left,cell.parentElement.querySelector('.particulars')?.getBoundingClientRect().right??frame.left);
+  const dx=bounds.left<left?bounds.left-left:Math.max(0,bounds.right-frame.left-viewport.clientWidth);
+  const dy=cell.closest('thead')?0:bounds.top<top?bounds.top-top:Math.max(0,bounds.bottom-frame.top-viewport.clientHeight);
+  viewport.scrollBy({left:dx,top:dy,behavior:'instant'});
+ }
+ table.addEventListener('mousedown',event=>{
+  const cell=event.target.closest(gridCellSelector);
+  if(event.button!==0||!cell||event.target.closest('button')||
+     (event.target.matches('input')&&event.target===document.activeElement))return;
+  event.preventDefault();
+  focusGridCell(cell);
  });
  function recalculate(){
   const version=++sequence;
@@ -341,8 +369,10 @@
   return input.matches('td input[data-ref]:enabled')&&!input.readOnly&&canEditCell(input.closest('td'));
  }
  function commitGridInput(input){
-  if(!editableGridInput(input)||input.value===String(inputValue(input.dataset.ref)))return;
+  if(!editableGridInput(input))return;
   const ref=input.dataset.ref;
+  failedEdits.delete(ref);
+  if(input.value===String(inputValue(ref)))return;
   if(manual(ref)||sqlSource(ref)){
    if(pendingManual.get(ref)===input.value)return;
    const content=input.value;
@@ -355,35 +385,41 @@
   if(selected===input.closest('td'))select(selected);
   recalculate();
  }
- function handleGridKey(event,cell,commit,cancel){
+ function handleGridKey(event,cell,commit,cancel,arrows=false){
   handleWorksheetEditKey(event,{
-   cell,commit,cancel,
-   candidates:()=>table.querySelectorAll('td[data-ref]'),
+   cell,commit,cancel,arrows,
+   candidates:()=>table.querySelectorAll(gridCellSelector),
    coordinates:cell=>{
     const {row,column}=data.metadata[cell.dataset.ref],end=data.metadata[cell.dataset.excelRangeEnd];
-    return {row,column,rowEnd:end?.row,columnEnd:end?.column};
+    return {row,column,rowEnd:end?.row??row+cell.rowSpan-1,columnEnd:end?.column??column+cell.colSpan-1};
    },
-   leave:direction=>document.querySelector(direction<0?'#total-group-toggle':'#report-notes summary').focus(),
-   focus:cell=>{
-    const input=cell.querySelector('input');
-    if(input&&editableGridInput(input)){input.focus();return;}
-    if(!cell.hasAttribute('tabindex'))cell.tabIndex=-1;
-    cell.focus();
-    openFormulaEditor(cell);
-   }
+   focus:focusGridCell
   });
  }
  table.addEventListener('change',e=>commitGridInput(e.target));
+ table.addEventListener('focusout',e=>{
+  if(e.target.matches('input[data-ref]'))commitGridInput(e.target);
+ });
  table.addEventListener('keydown',e=>{
-  const target=e.target,cell=target.closest('td[data-ref]');
-  if(!cell||(!target.matches('input[data-ref]')&&target!==cell))return;
-  if(target===cell&&(manual(cell.dataset.ref)||sqlSource(cell.dataset.ref))&&
-     (e.key==='F2'||(e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey))){
-   const input=cell.querySelector('input[data-ref]');
-   if(input){e.preventDefault();input.focus();if(e.key!=='F2')input.value=e.key;return;}
+  const target=e.target,cell=target.closest(gridCellSelector);
+  if(!cell)return;
+  if(target!==cell&&!target.matches('input[data-ref]')){
+   if(target.matches('.report-row-toggle')&&(e.key==='Tab'||e.key.startsWith('Arrow')))handleGridKey(e,cell,()=>{},()=>{},true);
+   return;
+  }
+  if(target===cell&&!e.isComposing&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&
+     (e.key==='F2'||e.key.length===1)){
+   if(beginGridEdit(cell,e.key==='F2'?undefined:e.key))e.preventDefault();
+   return;
   }
   const editing=editableGridInput(target);
-  handleGridKey(e,cell,()=>{if(editing)commitGridInput(target);},()=>{if(editing)target.value=inputValue(target.dataset.ref);});
+  handleGridKey(e,cell,()=>{if(editing)commitGridInput(target);},()=>{
+   if(!editing)return;
+   failedEdits.delete(cell.dataset.ref);
+   target.value=inputValue(cell.dataset.ref);
+   focusGridCell(cell);
+  },!editing);
+  if(editing&&e.defaultPrevented&&document.activeElement===target&&['Enter','Tab'].includes(e.key))focusGridCell(cell);
  });
  function setWorksheetUnlocked(unlocked){
   worksheetUnlocked=unlocked;
@@ -395,9 +431,7 @@
   updateUndoButton();
  }
  function updateUndoButton(){
-  const command=manualHistory.peek('undo');
-  undoFormula.hidden=!command;
-  undoFormula.textContent=command?.kind==='sql'?'Undo SQL Cell Edit':'Undo Formula Edit';
+  undoFormula.hidden=!manualHistory.peek('undo');
  }
  function undoCellEdit(command){
   return command.kind==='sql'?commitSqlManual('undo-sql-manual',command.ref,{editToken:command.after})
@@ -415,33 +449,32 @@
    sqlIndicators();
    if(version===sequence)renderCalculation(result.calculation,true,true);
    const input=table.querySelector(`td[data-ref="${ref}"] input[data-ref]`);
-   if(input&&(!pendingManual.has(ref)||pendingManual.get(ref)===extra.content))input.value=inputValue(ref);
+   if(input&&document.activeElement!==input&&(!pendingManual.has(ref)||pendingManual.get(ref)===extra.content))input.value=inputValue(ref);
    if(selected&&!editingRef)select(selected);
    status.classList.remove('error');
    if(result.changed)status.textContent=action==='restore-sql-value'?'SQL value restored':action==='undo-sql-manual'?'SQL cell edit undone':'Manual override saved';
   }).catch(error=>{
+   if(action==='edit-sql-manual'&&pendingManual.get(ref)===extra.content)failedEdits.set(ref,extra.content);
    const input=table.querySelector(`td[data-ref="${ref}"] input[data-ref]`);
-   if(input&&(!pendingManual.has(ref)||pendingManual.get(ref)===extra.content))input.value=inputValue(ref);
+   if(input&&failedEdits.has(ref)&&document.activeElement!==input)input.value=failedEdits.get(ref);
    if(selected?.dataset.ref===ref&&!editingRef)select(selected);
-   status.textContent=error.message;status.classList.add('error');
+   status.textContent=error.message+(action==='edit-sql-manual'?' Select the cell and press F2 to revise your entry.':'');status.classList.add('error');
   });
   return pending;
  }
- function openFormulaEditor(cell,replacement){
-  if(!cell?.hasAttribute('data-original-formula-editable')||manual(cell.dataset.ref)||sqlSource(cell.dataset.ref)||!canEditCell(cell)||loading||saving||exporting)return false;
+ function beginGridEdit(cell,replacement){
+  if(!cell||!canEditCell(cell)||loading||saving||exporting)return false;
   if(selected!==cell)select(cell,true);
-  bar.focus();
-  if(replacement!==undefined){bar.value=replacement;editingRef=cell.dataset.ref;}
+  const ref=cell.dataset.ref,input=cell.querySelector('input[data-ref]');
+  const editor=input??bar;
+  const value=replacement??pendingManual.get(ref)??failedEdits.get(ref)??(input?inputValue(ref):bar.value);
+  editor.focus({preventScroll:true});
+  editor.value=value;
+  editor.setSelectionRange(editor.value.length,editor.value.length);
+  if(editor===bar)editingRef=ref;
   return true;
  }
- table.addEventListener('dblclick',e=>openFormulaEditor(e.target.closest('[data-original-formula-editable]')));
- table.addEventListener('keydown',e=>{
-  const cell=e.target.closest('[data-original-formula-editable]');
-  if(e.defaultPrevented||e.target!==cell)return;
-  if(e.key==='F2'||e.key==='Enter'||(e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey)){
-   if(openFormulaEditor(cell,e.key.length===1?e.key:undefined))e.preventDefault();
-  }
- });
+ table.addEventListener('dblclick',e=>beginGridEdit(e.target.closest('td[data-ref]')));
  function commitFormula(ref,content,editToken){
   const version=++sequence;
   pending=pending.catch(()=>{}).then(async()=>{
@@ -458,8 +491,9 @@
    status.classList.remove('error');
    if(dirty)status.textContent='Unsaved changes';
   }).catch(e=>{
+   if(!editToken)failedEdits.set(ref,content);
    if(e.message.startsWith('Unlock Formulas'))setWorksheetUnlocked(false);
-   status.textContent=e.message;
+   status.textContent=e.message+(editToken?'':' Select the cell and press F2 to revise your entry.');
    status.classList.add('error');
   });
   return pending;
@@ -468,9 +502,13 @@
   if(!editingRef)return;
   const ref=editingRef,content=bar.value;
   editingRef=null;
+  failedEdits.delete(ref);
   const cell=table.querySelector('td[data-ref="'+ref+'"]');
   if(!cell||!canEditCell(cell))return;
-  if(cell.hasAttribute('data-original-formula-editable')&&!manual(ref)&&!sqlSource(ref))return commitFormula(ref,content);
+  if(cell.hasAttribute('data-original-formula-editable')&&!manual(ref)&&!sqlSource(ref)){
+   if(content!==(data.formulas[ref]??activeFormula(ref)??inputValue(ref)))return commitFormula(ref,content);
+   return;
+  }
   const input=cell.querySelector('input');
   if(input){input.value=content;commitGridInput(input);}
  }
@@ -481,8 +519,9 @@
  bar.addEventListener('keydown',e=>{
   if(bar.readOnly||!selected)return;
   const cell=selected;
-  if(e.key==='Tab'&&!editingRef&&(manual(cell.dataset.ref)||sqlSource(cell.dataset.ref)))return;
-  handleGridKey(e,cell,commitBarEdit,()=>{editingRef=null;select(cell);});
+  if(e.key==='Tab'&&!editingRef)return;
+  handleGridKey(e,cell,commitBarEdit,()=>{editingRef=null;failedEdits.delete(cell.dataset.ref);focusGridCell(cell);});
+  if(e.defaultPrevented&&document.activeElement===bar&&['Enter','Tab'].includes(e.key))focusGridCell(cell);
  });
  unlock.addEventListener('click',async()=>{
   if(changingLock||loading||saving||exporting)return;
@@ -554,7 +593,7 @@
   renderCalculation(result,true);
   if(selected)select(selected);
  }
- const coopSyncStatus=document.querySelector('#coop-sync-status'),coopResync=document.querySelector('#coop-resync');
+ const coopSyncStatus=document.querySelector('#coop-sync-status');
  function displayCoopSync(){
   coopSyncStatus.textContent=data.coopSyncWarning??'';
  }
@@ -563,7 +602,6 @@
  }
  function refreshCoop(){
   const month=data.month;
-  coopResync.disabled=true;
   pending=pending.catch(()=>{}).then(async()=>{
    if(month!==data.month)return;
    const result=await request('calculate',{refreshTotal:true});
@@ -574,10 +612,9 @@
    if(selected&&!editingRef)select(selected);
   }).catch(()=>{
    coopSyncStatus.textContent='COOP sync failed. Last displayed values were kept.';
-  }).finally(()=>{coopResync.disabled=false;});
+  });
   return pending;
  }
- coopResync.addEventListener('click',refreshCoop);
  window.genstatReport={confirmAction,refreshRecoveredSales,refreshCoop,notifySettings:notifyReport,notifyRecoveredSalesSaved:()=>notifyReport('Recovered Sales saved and GENSTAT summary updated successfully.'),snapshot:()=>({month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,values:structuredClone(data.values),formulas:structuredClone(data.formulas),sqlReplacements:structuredClone(data.sqlReplacements),sqlSources:structuredClone(data.sqlSources)}),
   previewContext:()=>({preview:data.preview,total:data.total,previewToken:data.previewToken}),
   disableSqlLabels(rowKey){setRestoreRecovery(null);
@@ -632,38 +669,39 @@
  }
  async function rebuildReport(undo=false){
   const recovery=restoreRecovery;
-  const before={dirty,revision:data.revision,sqlTargets:data.sqlTargets};
-  setLoading(true,data.month,undo?'Recovering the previous report?':'Restoring Excel formulas and recalculating report?');
+  setLoading(true,data.month,undo?'Recovering previous formulas…':'Refreshing SQL values and restoring report formulas…');
   restoreButton.disabled=true;
   restoreButton.setAttribute('aria-busy','true');
+  confirmationButton.disabled=true;
   try{
    await pending;
+   status.classList.remove('error');
+   status.textContent=undo?'Recovering previous formulas…':'Restoring report…';
    const result=await request(undo?'undo-restore':'restore-report',undo?{undoToken:recovery.token}:{});
    if(result.month!==data.month||!result.calculation?.cells||!result.values||!result.formulas||!result.sqlReplacements||!result.sqlSources||!result.preview||!result.total||(!undo&&!result.sqlTargets))throw Error('The restoration response is incomplete.');
-   const {calculation,undoToken,draftChanged,...state}=result;
+   const {calculation,undoToken,restoredSqlCells,...state}=result;
    Object.assign(data,state);
    displayCoopSync();
-   if(undo){
-    data.sqlTargets=recovery.sqlTargets;
-    dirty=recovery.revision===data.revision?recovery.dirty:true;
-    setRestoreRecovery(null);
-   }else if(undoToken){
-    setRestoreRecovery({...before,token:undoToken});
-    dirty=dirty||draftChanged;
-   }
-   clearManualHistory(true);
+   dirty=false;
+   setRestoreRecovery(undoToken?{token:undoToken}:null);
+   const restored=new Set(restoredSqlCells);
+   manualHistory.clear(command=>command.kind==='sql'&&!restored.has(command.ref));
+   updateUndoButton();
+   for(const [ref,content] of failedEdits)if(restored.has(ref)||data.metadata[ref]?.effectiveFormula)failedEdits.delete(ref);
    sqlIndicators();
    renderCalculation(calculation,true);
    if(selected)select(selected);
    status.classList.remove('error');
-   if(dirty)status.textContent='Unsaved changes';
-   else if(undo)status.textContent=data.revision?'Draft loaded':'No saved report data.';
-   notifyReport(undo?'Previous report recovered.':'Report formulas restored and saved configurations reapplied.');
+   status.textContent=undo?'Draft saved':'Report restored and saved';
+   notifyReport(undo?'Previous report formulas recovered and saved.':'Report formulas and SQL values restored successfully.');
   }catch(e){
+   status.classList.add('error');
+   status.textContent=undo?'Undo Restore failed':'Report restore failed';
    notifyReport((undo?'Recovery failed. Your current report has been preserved.':'Restoration failed. Your previous report has been preserved.')+' '+e.message,true);
   }finally{
    setLoading(false);
    restoreButton.disabled=false;
+   confirmationButton.disabled=false;
    restoreButton.removeAttribute('aria-busy');
    (undo&&restoreRecovery?undoRestore:restoreButton).focus({preventScroll:true});
   }
@@ -671,7 +709,7 @@
  restoreButton.addEventListener('click',async()=>{
   if(loading||saving||exporting)return;
   const month=data.month;
-  const message='This will restore the original Excel template formulas and reapply all saved SQL configurations and custom report formulas for the selected reporting period.';
+  const message='This will restore the original Excel template formulas, refresh all configured SQL values, and reapply custom report formulas for the selected reporting period.';
   if(!await confirmAction(message,{restore:true,detail:formatPeriod(month)}))return;
   if(loading||saving||exporting||data.month!==month)return;
   notifyReport('');
@@ -713,7 +751,7 @@
  async function loadPeriod(target){
   if(loading)return;
   if(!target||target===data.month||saving||exporting||settings.open){syncSelectors(data.month);return;}
-  if(dirty&&!await confirmAction('Discard unsaved report changes and switch reporting periods?')){syncSelectors(data.month);return;}
+  if((dirty||failedEdits.size)&&!await confirmAction('Discard unsaved report changes and switch reporting periods?')){syncSelectors(data.month);return;}
   const version=++loadSequence;
   clearFormulaReferences();
   retry.hidden=true;syncSelectors(target);setLoading(true,target);
@@ -724,6 +762,7 @@
    if(result.month!==target)throw Error('The response belongs to a different reporting period.');
    if(!result.calculation?.cells||!result.values||!result.formulas||!result.sqlReplacements||!result.sqlSources||!result.sqlTargets||!result.preview||!result.total)throw Error('The reporting response is incomplete.');
    Object.assign(data,result);
+   failedEdits.clear();
    displayCoopSync();
    syncSelectors(target);
    selectRowLabel(null);

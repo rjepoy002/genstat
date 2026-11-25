@@ -116,12 +116,26 @@ function base_report_formula_editable(array $layout,string $ref): bool {
   &&sql_replacement_cell_allowed($sheet,$ref)
   &&(!isset($layout['reportMonth'])||!isset(recov_targets($layout)[$ref]));
 }
-function base_report_formula_audit(array $layout): array {
+function base_report_formula_audit(array $layout,?array $draft=null): array {
+ $entries=array_merge(base_report_formula_audit_sidecar($layout),($draft??base_report_read_draft($layout))['restorationAudit']??[]);
+ usort($entries,fn($a,$b)=>[$a['revision'],$a['timestamp']]<=>[$b['revision'],$b['timestamp']]);
+ return $entries;
+}
+function base_report_formula_audit_sidecar(array $layout): array {
  $path=base_report_draft_path($layout).'.formula-audit.json';
  if(!is_file($path))return [];
  $contents=file_get_contents($path);
  if($contents===false)throw new RuntimeException('Unable to read Formula Edit History.');
  return json_decode($contents,true,512,JSON_THROW_ON_ERROR);
+}
+function base_report_formula_events(array $layout,int $revision,array $before,array $after,string $action): array {
+ $sheet=$layout['sheets'][0];$source=expanded_formulas($sheet);$entries=[];
+ foreach(array_keys($before+$after) as $ref){
+  $old=$before[$ref]??$source[$ref]??null;$new=$after[$ref]??$source[$ref]??null;
+  if($old===$new)continue;
+  $entries[]=['period'=>base_report_month($layout),'sheet'=>$sheet['name'],'cell'=>$ref,'previousFormula'=>$old,'newFormula'=>$new,'action'=>$action,'timestamp'=>gmdate('c'),'editor'=>$_SESSION['username']??null,'revision'=>$revision];
+ }
+ return $entries;
 }
 function base_report_append_formula_audit(array $layout,int $revision,array $before,array $after,string $action): array {
  $path=base_report_draft_path($layout);
@@ -129,14 +143,8 @@ function base_report_append_formula_audit(array $layout,int $revision,array $bef
  if(!$lock||!flock($lock,LOCK_EX))throw new RuntimeException('Unable to lock Formula Edit History.');
  try{
   if(base_report_read_draft($layout)['revision']!==$revision)throw new RuntimeException('Another window saved this report. Reload before editing.');
-  $audit=base_report_formula_audit($layout);
-  $sheet=$layout['sheets'][0];$source=expanded_formulas($sheet);
-  foreach(array_keys($before+$after) as $ref){
-   $old=$before[$ref]??$source[$ref]??null;$new=$after[$ref]??$source[$ref]??null;
-   if($old===$new)continue;
-   $audit[]=['period'=>base_report_month($layout),'sheet'=>$sheet['name'],'cell'=>$ref,'previousFormula'=>$old,'newFormula'=>$new,'action'=>$action,'timestamp'=>gmdate('c'),'editor'=>$_SESSION['username']??null,'revision'=>$revision];
-  }
+  $audit=array_merge(base_report_formula_audit_sidecar($layout),base_report_formula_events($layout,$revision,$before,$after,$action));
   atomic_file_write($path.'.formula-audit.json',json_bytes($audit));
-  return $audit;
+  return base_report_formula_audit($layout);
  }finally{flock($lock,LOCK_UN);fclose($lock);}
 }
