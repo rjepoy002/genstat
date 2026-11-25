@@ -1,9 +1,8 @@
 'use strict';
 (()=>{
  const key='genstat:appearance:v1';
- const defaults={showHeadings:'on',showEmptyRows:'off',theme:'system',rowHeight:36,fontSize:12,columnSpacing:'comfortable',selectionBorderWidth:2,selectionBorderColor:'#2563EB'};
- const options={showHeadings:['on','off'],showEmptyRows:['off','on'],theme:['system','light','dark'],rowHeight:[28,36,44],fontSize:[11,12,13,14],columnSpacing:['compact','comfortable'],selectionBorderWidth:[2,3]};
- const system=matchMedia('(prefers-color-scheme: dark)');
+ const defaults={showHeadings:'on',showEmptyRows:'off',theme:'light',rowHeight:36,fontSize:12,columnSpacing:'comfortable',selectionBorderWidth:2,selectionBorderColor:'#2563EB'};
+ const options={showHeadings:['on','off'],showEmptyRows:['off','on'],theme:['light','dark'],rowHeight:[28,36,44],fontSize:[11,12,13,14],columnSpacing:['compact','comfortable'],selectionBorderWidth:[2,3]};
  const root=document.documentElement;
  function validated(input){
   const result={...defaults};
@@ -14,7 +13,7 @@
  let applied=defaults;
  try{applied=validated(JSON.parse(localStorage.getItem(key)));}catch{}
  function style(target,settings){
-  const dark=settings.theme==='dark'||(settings.theme==='system'&&system.matches);
+  const dark=settings.theme==='dark';
   target.classList.toggle('dark',dark);
   target.dataset.theme=dark?'dark':'light';
   target.style.colorScheme=target.dataset.theme;
@@ -29,8 +28,31 @@
  style(root,applied);
  document.addEventListener('DOMContentLoaded',()=>{
   const byId=id=>document.getElementById(id);
+  const toggle=byId('report-theme-toggle');
+  function updateToggle(){
+   if(!toggle)return;
+   const label=applied.theme==='dark'?'Switch to Light Mode':'Switch to Dark Mode';
+   toggle.setAttribute('aria-label',label);
+   toggle.dataset.tooltip=label;
+  }
+  function apply(settings){
+   applied=settings;
+   style(root,applied);
+   updateToggle();
+   dispatchEvent(new Event('genstat-appearance'));
+  }
+  function save(settings){
+   apply(settings);
+   try{localStorage.setItem(key,JSON.stringify(applied));return true;}catch{return false;}
+  }
+  updateToggle();
+  toggle?.addEventListener('click',()=>save({...applied,theme:applied.theme==='dark'?'light':'dark'}));
+  addEventListener('storage',event=>{
+   if(event.storageArea!==localStorage||(event.key!==key&&event.key!==null))return;
+   try{apply(validated(JSON.parse(event.newValue)));}catch{}
+  });
   const dialog=byId('sql-settings-dialog');
-  if(!dialog){system.addEventListener('change',()=>style(root,applied));return;}
+  if(!dialog)return;
   const form=byId('report-appearance-form'),preview=byId('appearance-preview');
   const reportingTab=byId('settings-reporting-tab'),appearanceTab=byId('settings-appearance-tab');
   const status=byId('appearance-status');
@@ -79,12 +101,8 @@
    catch(error){status.textContent=error.message||'Unable to authorize appearance changes.';return;}
    finally{button.disabled=false;}
    if(!dialog.open)return;
-   applied=next;style(root,applied);
-   try{localStorage.setItem(key,JSON.stringify(applied));status.textContent='Appearance saved.';}
-   catch{status.textContent='Appearance applied for this page. Browser storage is unavailable.';}
-   dispatchEvent(new Event('genstat-appearance'));
+   status.textContent=save(next)?'Appearance saved.':'Appearance applied for this page. Browser storage is unavailable.';
   });
-  system.addEventListener('change',()=>{style(root,applied);style(preview,draft());});
   fill(applied);
  });
 })();

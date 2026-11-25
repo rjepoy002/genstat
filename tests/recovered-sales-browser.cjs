@@ -225,7 +225,7 @@ const {execFileSync}=require('node:child_process');
   assert.equal(edited.id,savedId);
   await page.locator('#restore-sql').click();
   await confirm.getByRole('button',{name:'Restore & Recalculate',exact:true}).click();
-  await page.locator('#restore-notice').getByText('Report formulas restored and saved configurations reapplied.').waitFor();
+  await page.locator('#restore-notice').getByText('Report formulas and SQL values restored successfully.').waitFor();
   assert.equal(await areaCell('C').textContent(),'150.00');
   await show();
   await rows.last().getByRole('button',{name:'Delete Entry'}).click();

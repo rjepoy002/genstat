@@ -2,6 +2,9 @@
 const {chromium}=require(process.env.TEMP+'\\genstat-browser\\node_modules\\playwright');
 const assert=require('assert');
 const fs=require('fs'),path=require('path');
+async function setTheme(page,theme){
+ if(await page.locator('html').getAttribute('data-theme')!==theme)await page.locator('#report-theme-toggle').click();
+}
 async function checkGridKeys(browser,url){
  const grid=await browser.newPage({viewport:{width:1440,height:1000}});
  try{
@@ -100,11 +103,11 @@ async function checkGridKeys(browser,url){
   await grid.keyboard.press('Shift+Tab');
   assert.equal(await active(),'P39');
   await grid.setViewportSize({width:1050,height:600});
-  await grid.emulateMedia({colorScheme:'dark'});
-  await grid.keyboard.press('ArrowRight');
+  await setTheme(grid,'dark');
+  await cell('P39').press('ArrowRight');
   assert.equal(await active(),'Q39');
   assert(await grid.locator('.report-scroll').evaluate(viewport=>viewport.scrollLeft>0&&viewport.scrollTop>0));
-  await grid.emulateMedia({colorScheme:'light'});
+  await setTheme(grid,'light');
   await grid.setViewportSize({width:1440,height:1000});
   await grid.locator('td[data-ref="Q24"]').press('Enter');
   assert(await grid.locator('#formula').evaluate(el=>el.readOnly));
@@ -289,7 +292,7 @@ async function checkGridKeys(browser,url){
   assert.equal(await outlines.count(),0);
   assert.deepEqual(await page.evaluate(()=>window.genstatReport.snapshot()),reportSnapshot);
   for(const mode of ['dark','light']){
-   await page.emulateMedia({colorScheme:mode});
+   await setTheme(page,mode);
    await page.waitForFunction(mode=>document.documentElement.dataset.theme===mode,mode);
    await refCell('Q11').focus();
    const shadow=await refCell('B11').evaluate(cell=>getComputedStyle(cell,'::before').boxShadow);
@@ -408,7 +411,7 @@ async function checkGridKeys(browser,url){
   const beforeRestore=await page.evaluate(()=>window.genstatReport.snapshot());
   assert.equal(beforeRestore.formulas.Q11,'=SUM(B11:P11)+1');
   for(const [theme,cancel] of [['light','cancel'],['dark','escape']]){
-   await page.emulateMedia({colorScheme:theme});
+   await setTheme(page,theme);
    await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
    await restore.click();
    assert(await confirmation.getByRole('heading',{name:'Restore Report Formulas & SQL Values?'}).isVisible());
@@ -424,7 +427,7 @@ async function checkGridKeys(browser,url){
    assert(await confirmation.isHidden());
    assert.deepEqual(await page.evaluate(()=>window.genstatReport.snapshot()),beforeRestore);
   }
-  await page.emulateMedia({colorScheme:'light'});
+  await setTheme(page,'light');
   const candidate=path.resolve(`storage/base-report-${beforeRestore.hash}-${beforeRestore.month}.json`);
   if(fs.existsSync(candidate))throw Error('Existing base draft: refusing persistence test writes.');
   testDraft=candidate;

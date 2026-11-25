@@ -100,9 +100,16 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   });
   assert.equal(wrongMonth,400);
   await open();
+  // Simulate a preference change from another tab while a modal owns focus.
+  const setTheme=theme=>page.evaluate(theme=>{
+   const key='genstat:appearance:v1';
+   const newValue=JSON.stringify({...JSON.parse(localStorage.getItem(key)),theme});
+   localStorage.setItem(key,newValue);
+   dispatchEvent(new StorageEvent('storage',{key,newValue,storageArea:localStorage}));
+  },theme);
   const rowColor=()=>page.locator('#sql-row-value').evaluate(el=>getComputedStyle(el).color);
   const expectRowColor=async(theme,status)=>{
-   await page.emulateMedia({colorScheme:theme});
+   await setTheme(theme);
    await page.waitForFunction(mode=>document.documentElement.dataset.theme===mode,theme);
    const swatch=await page.evaluate(status=>{
     const sample=document.createElement('span');
@@ -184,7 +191,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert(await restore.isEnabled());
   for(const [width,theme] of [[1440,'light'],[320,'dark']]){
    await page.setViewportSize({width,height:1000});
-   await page.emulateMedia({colorScheme:theme});
+   await setTheme(theme);
    await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
    await restore.hover();
    assert(await restoreTooltip.isVisible());
@@ -213,7 +220,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.equal((await page.evaluate(()=>window.genstatReport.snapshot())).sqlReplacements.F18.value,'1201329');
  assert.equal(await page.locator('#status').textContent(),'Report restored and saved');await page.reload();assert.equal(await page.locator('[data-ref="F18"] .value').textContent(),'1,201,329.00');
   await page.setViewportSize({width:1440,height:1000});
-  await page.emulateMedia({colorScheme:'light'});
+  await setTheme('light');
   assert.doesNotMatch(serverLog,/PHP (?:Warning|Fatal error|Parse error|Notice)/);
   const row18Before=stats().records.find(r=>r.template_row_key.endsWith('A18'));await open();assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A11');assert.equal(await page.locator('#sql-row-status').textContent(),'Disabled');assert(!(await page.locator('#sql-approved-note').isVisible()));await test();const ordinary=await apply();assert.equal(ordinary.sqlReplacements.F18.value,'1201329');assert.equal(await page.locator('td[data-ref="B11"]').getAttribute('data-sql-applied'),'true');assert.equal(stats().records.find(r=>r.template_row_key.endsWith('A11')).query_key,'legacy_existing');assert.deepEqual(stats().records.find(r=>r.template_row_key.endsWith('A18')),row18Before);assert.equal(JSON.parse(fs.readFileSync(draft,'utf8')).revision,2);assert.equal((await api('apply',submitted)).status,400);
   await page.locator('#sql-editor').fill(sql+' ');await page.locator('#sql-row').selectOption('genstat-base/Jul26/A18',{force:true});await page.locator('#report-confirmation').getByRole('button',{name:'Cancel'}).click();await page.waitForFunction(()=>document.querySelector('#sql-row').value==='genstat-base/Jul26/A11');assert.equal(await page.locator('#sql-row').inputValue(),'genstat-base/Jul26/A11');assert.equal(checksum(),beforeSource);assert.deepEqual(productionDrafts(),beforeDrafts);assert.deepEqual(errors,[]);
@@ -542,7 +549,7 @@ const fixture=(action,...args)=>execFileSync(php,['tests/query-apply-fixture.php
   assert.match(await overrideCell.getAttribute('title'),/Original SQL: 0.00/);
   assert.equal(await overrideCell.locator('.value').evaluate(cell=>getComputedStyle(cell,'::before').content),'"MAN "');
   for(const [theme,color] of [['light','rgb(180, 83, 9)'],['dark','rgb(251, 191, 36)']]){
-   await page.emulateMedia({colorScheme:theme});
+   await setTheme(theme);
    await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
    assert.equal(await overrideCell.locator('.value').evaluate(cell=>getComputedStyle(cell,'::before').color),color);
   }

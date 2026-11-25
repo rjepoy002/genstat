@@ -241,7 +241,7 @@ const db=action=>execFileSync(php,[path.join(root,'tests/coop-phase1-fixture.php
   await page.locator('#sql-settings-close').click();
   await page.locator('#report-month').selectOption('202608');
   await page.waitForFunction(()=>window.genstatReport.snapshot().month==='202608');
-  await page.emulateMedia({colorScheme:'dark'});
+  await page.locator('#report-theme-toggle').click();
   await ready();await status('Connection settings loaded.');
   await accountList.getByRole('cell',{name:'22.55',exact:true}).waitFor();
   await coopCell('O26').locator('.value').getByText('22.55',{exact:true}).waitFor();

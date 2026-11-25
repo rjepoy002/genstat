@@ -31,6 +31,8 @@ body>header .report-toolbar{max-width:100%;flex-wrap:wrap}
  .report-toolbar :is(#save,#report-export) .report-action-label{display:none}
 }
 .report-icon[hidden]{display:none}
+html:not(.dark) #report-theme-toggle [data-theme-icon="sun"],
+html.dark #report-theme-toggle [data-theme-icon="moon"]{display:none}
 .report-icon[data-tooltip]::after{position:absolute;top:calc(100% + 6px);right:0;z-index:3;white-space:nowrap;padding:4px 7px;border-radius:4px;background:#173650;color:white;font:11px/1.4 Arial,sans-serif;visibility:hidden;pointer-events:none}
 .report-icon[data-tooltip]::after{content:attr(data-tooltip)}
 .report-icon:hover::after,.report-icon:focus-visible::after,#restore-sql:hover~#restore-sql-tooltip,#restore-sql:focus-visible~#restore-sql-tooltip{visibility:visible}
