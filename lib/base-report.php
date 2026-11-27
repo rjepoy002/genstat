@@ -6,6 +6,7 @@ require_once __DIR__.'/formula-engine.php';
 require_once __DIR__.'/sql-replacements.php';
 require_once __DIR__.'/recovered-sales.php';
 require_once __DIR__.'/files.php';
+require_once __DIR__.'/monthly-snapshot.php';
 require_once __DIR__.'/base-report-sql-manual.php';
 
 function base_report_draft_path(array $layout): string {

@@ -1,15 +1,6 @@
 'use strict';
 (()=>{
- const data=JSON.parse(document.querySelector('#report-data').textContent),status=document.querySelector('#status'),bar=document.querySelector('#formula'),unlock=document.querySelector('#unlock');
- const saveCheck=document.querySelector('#report-save-check');
- const successfulSaveMessages=new Set(['Draft saved','Manual override saved','Report restored and saved']);
- const updateSaveCheck=()=>{
-  saveCheck.toggleAttribute('hidden',status.classList.contains('error')||!successfulSaveMessages.has(status.textContent));
- };
- new MutationObserver(updateSaveCheck).observe(status,{
-  childList:true,attributes:true,attributeFilter:['class']
- });
- updateSaveCheck();
+ const data=JSON.parse(document.querySelector('#report-data').textContent),statusDetail=document.querySelector('#report-status-detail'),bar=document.querySelector('#formula'),unlock=document.querySelector('#unlock');
  const confirmationDialog=document.querySelector('#report-confirmation');
  const confirmationTitle=document.querySelector('#report-confirmation-title');
  const confirmationWarning=document.querySelector('#report-confirmation-warning');
@@ -61,12 +52,50 @@
  }
  let selected=null,dirty=false,sequence=0,pending=Promise.resolve(),loading=false,saving=false,exporting=false;let worksheetUnlocked=false,editingRef=null,changingLock=false;
  const manualHistory=new GenstatEditHistory();
+ let calculationFailed=false;
  const undoFormula=document.querySelector('#undo-formula');
  const restoreSqlButton=document.querySelector('#restore-sql-value');
  const pendingManual=new Map();
  const failedEdits=new Map();
- data.preview={};
- data.sqlManualOverrides??={};data.sqlLatest??={};
+ data.preview??={};
+ const periodStatus=document.querySelector('#report-period-status');
+ const reportStatus=document.querySelector('#status');
+ const statusPrimary=document.querySelector('#report-status-primary');
+ const statusSecondary=document.querySelector('#report-status-secondary');
+ const statusSeparator=document.querySelector('#report-status-separator');
+ const savedAt=document.querySelector('#report-saved-at');
+ const statusIcons=document.querySelectorAll('[data-report-icon]');
+ const dateFormat=new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',year:'numeric'});
+ const timeFormat=new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
+ const statusCopy={
+  saved:['Report saved','Auto-refresh off','Monthly report saved. Automatic loading is disabled.'],
+  unsaved:['Unsaved report','Auto-refresh on','Unsaved monthly report. Automatic loading is enabled.'],
+  pending:['Unsaved changes','Click Save to update report','Unsaved changes. Click Save to update the monthly report.'],
+  loading:['Loading report','','Loading monthly report.']
+ };
+ let workingModified=false,saveFailed=false,pendingInput=false;
+ function renderReportStatus(){
+  const state=loading||saving?'loading':dirty||workingModified||saveFailed||pendingInput?'pending':data.savedAt?'saved':'unsaved';
+  const [primary,secondary,description]=statusCopy[state];
+  periodStatus.dataset.state=reportStatus.dataset.state=state;
+  periodStatus.title=description;
+  periodStatus.setAttribute('aria-label',description);
+  for(const icon of statusIcons)icon.hidden=icon.dataset.reportIcon!==state;
+  statusPrimary.textContent=saving?'Saving report':primary;
+  statusSecondary.textContent=secondary;
+  statusSeparator.hidden=!secondary;
+  savedAt.hidden=state!=='saved';
+  if(state==='saved'){
+   const date=new Date(data.savedAt);
+   const time=timeFormat.formatToParts(date).map(part=>part.type==='literal'?part.value.replace(/\s+/g,' '):part.value).join('');
+   savedAt.dateTime=data.savedAt;
+   savedAt.textContent=dateFormat.format(date)+' at '+time;
+  }else{
+   savedAt.removeAttribute('datetime');
+   savedAt.textContent='';
+  }
+ }
+ renderReportStatus();
  const controlled=ref=>Object.hasOwn(data.total,ref);
  const recovered=ref=>Object.hasOwn(data.recoveredSales,ref);
  const manual=ref=>data.sqlManualOverrides[ref];
@@ -265,7 +294,7 @@
  }
  sqlIndicators();sizeNumericColumns();
  async function request(action,extra={}){
-  const response=await fetch('base-report.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,values:data.values,formulas:data.formulas,sqlReplacements:data.sqlReplacements,sqlSources:data.sqlSources,preview:data.preview,total:data.total,previewToken:data.previewToken,...extra})});
+  const response=await fetch('base-report.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,workingId:data.workingId,snapshotRevision:data.snapshotRevision,values:data.values,formulas:data.formulas,sqlReplacements:data.sqlReplacements,sqlSources:data.sqlSources,preview:data.preview,total:data.total,previewToken:data.previewToken,...extra})});
   if(action==='export'&&response.ok)return response.blob();
   const result=await response.json();if(!response.ok||result.error)throw Error(result.error||'Request failed');return result;
  }
@@ -351,17 +380,17 @@
  });
  function recalculate(){
   const version=++sequence;
-  dirty=true;status.textContent='Recalculating…';
+  dirty=true;statusDetail.textContent='Recalculating…';
   pending=pending.catch(()=>{}).then(async()=>{
    if(version!==sequence)return;
    const result=await request('calculate');
    if(version!==sequence)return;
    applyManualState(result);sqlIndicators();
    renderCalculation(result);
-   status.textContent='Unsaved changes';status.classList.remove('error');
+   calculationFailed=false;statusDetail.classList.remove('error');
   }).catch(e=>{
    if(version!==sequence)return;
-   status.textContent=e.message;status.classList.add('error');
+   calculationFailed=true;statusDetail.textContent=e.message;statusDetail.classList.add('error');
   });
   return pending;
  }
@@ -394,6 +423,20 @@
     return {row,column,rowEnd:end?.row??row+cell.rowSpan-1,columnEnd:end?.column??column+cell.colSpan-1};
    },
    focus:focusGridCell
+  });
+ }
+ function updatePendingInput(){
+  const input=document.activeElement;
+  pendingInput=input===bar
+   ?editingRef!==null&&bar.value!==String(activeFormula(editingRef)??inputValue(editingRef))
+   :input.matches('td input[data-ref]')&&editableGridInput(input)&&input.value!==String(inputValue(input.dataset.ref));
+  renderReportStatus();
+ }
+ for(const field of [table,bar]){
+  field.addEventListener('input',updatePendingInput);
+  field.addEventListener('focusout',()=>queueMicrotask(updatePendingInput));
+  field.addEventListener('keydown',event=>{
+   if(event.key==='Enter'||event.key==='Escape')queueMicrotask(updatePendingInput);
   });
  }
  table.addEventListener('change',e=>commitGridInput(e.target));
@@ -451,14 +494,14 @@
    const input=table.querySelector(`td[data-ref="${ref}"] input[data-ref]`);
    if(input&&document.activeElement!==input&&(!pendingManual.has(ref)||pendingManual.get(ref)===extra.content))input.value=inputValue(ref);
    if(selected&&!editingRef)select(selected);
-   status.classList.remove('error');
-   if(result.changed)status.textContent=action==='restore-sql-value'?'SQL value restored':action==='undo-sql-manual'?'SQL cell edit undone':'Manual override saved';
+   statusDetail.classList.remove('error');
+   if(result.changed){if(data.savedAt)dirty=true;workingModified=true;statusDetail.textContent='';renderReportStatus();}
   }).catch(error=>{
    if(action==='edit-sql-manual'&&pendingManual.get(ref)===extra.content)failedEdits.set(ref,extra.content);
    const input=table.querySelector(`td[data-ref="${ref}"] input[data-ref]`);
    if(input&&failedEdits.has(ref)&&document.activeElement!==input)input.value=failedEdits.get(ref);
    if(selected?.dataset.ref===ref&&!editingRef)select(selected);
-   status.textContent=error.message+(action==='edit-sql-manual'?' Select the cell and press F2 to revise your entry.':'');status.classList.add('error');
+   statusDetail.textContent=error.message+(action==='edit-sql-manual'?' Select the cell and press F2 to revise your entry.':'');statusDetail.classList.add('error');
   });
   return pending;
  }
@@ -488,13 +531,13 @@
    sqlIndicators();
    if(version===sequence)renderCalculation(result.calculation);
    if(selected&&!editingRef)select(selected,true);
-   status.classList.remove('error');
-   if(dirty)status.textContent='Unsaved changes';
+   statusDetail.classList.remove('error');
+   if(dirty){statusDetail.textContent='';renderReportStatus();}
   }).catch(e=>{
    if(!editToken)failedEdits.set(ref,content);
    if(e.message.startsWith('Unlock Formulas'))setWorksheetUnlocked(false);
-   status.textContent=e.message+(editToken?'':' Select the cell and press F2 to revise your entry.');
-   status.classList.add('error');
+   statusDetail.textContent=e.message+(editToken?'':' Select the cell and press F2 to revise your entry.');
+   statusDetail.classList.add('error');
   });
   return pending;
  }
@@ -531,8 +574,8 @@
    await pending;
    const result=await request(worksheetUnlocked?'lock-formulas':'unlock');
    setWorksheetUnlocked(result.unlocked);
-   status.classList.remove('error');
-  }catch(e){status.textContent=e.message;status.classList.add('error');}
+   statusDetail.classList.remove('error');
+  }catch(e){statusDetail.textContent=e.message;statusDetail.classList.add('error');}
   finally{changingLock=false;}
  });
  undoFormula.addEventListener('click',()=>{
@@ -546,8 +589,8 @@
   const record=manual(ref),latest=data.sqlLatest[ref];
   if(month!==data.month||!record)return;
   if(latest==null){
-   status.textContent='No valid SQL value is available. The manual value was kept.';
-   status.classList.add('error');return;
+   statusDetail.textContent='No valid SQL value is available. The manual value was kept.';
+   statusDetail.classList.add('error');return;
   }
   const detail=`Current manual value: ${formatSqlNumber(record.value)}\nLatest available SQL value: ${formatSqlNumber(latest)}`;
   if(await confirmAction('This will discard the manual override and restore the latest value retrieved from the database.',{restoreSql:true,detail})&&
@@ -568,29 +611,37 @@
  const saveButton=document.querySelector('#save'),exportButton=document.querySelector('#report-export');
  saveButton.addEventListener('click',async()=>{
   if(saving||loading||exporting)return;
+  commitBarEdit();
+  if(document.activeElement?.matches('td input[data-ref]'))commitGridInput(document.activeElement);
   saving=true;saveButton.disabled=true;saveButton.setAttribute('aria-busy','true');
-  status.textContent='Saving draft…';status.classList.remove('error');
+  statusDetail.textContent='Saving draft…';statusDetail.classList.remove('error');
   // Use the same queue as recalculation so edits made during a draft write
   // calculate against the new revision once the write has finished.
   const write=pending.catch(()=>{}).then(async()=>{
    const version=sequence;
-   status.textContent='Saving draft…';
+   statusDetail.textContent='Saving draft…';
    const result=await request('save');
    data.revision=result.revision;
-   if(version===sequence){dirty=false;status.textContent='Draft saved';}
-  }).catch(e=>{status.textContent='Save failed. '+e.message;status.classList.add('error');});
+   data.workingId=result.workingId;
+   data.snapshotRevision=result.snapshotRevision;
+   data.savedAt=result.savedAt;
+   saveFailed=false;
+   if(version===sequence){dirty=false;workingModified=false;pendingInput=false;}
+  }).catch(e=>{saveFailed=true;statusDetail.textContent='Save failed. '+e.message;statusDetail.classList.add('error');});
   pending=write;
   try{await write;}
-  finally{saving=false;saveButton.disabled=false;saveButton.removeAttribute('aria-busy');}
+  finally{saving=false;saveButton.disabled=false;saveButton.removeAttribute('aria-busy');renderReportStatus();}
  });
  // Reviewed SQL values enter the same live draft and Save Draft workflow.
  async function refreshRecoveredSales(month){
   await pending;
   if(month!==data.month)throw Error('The reporting month changed.');
-  const result=await request('calculate');
+  const result=await request('calculate',{refreshRecoveredSales:true});
   if(month!==data.month||!result.recoveredSales||!result.cells)throw Error('The report returned an incomplete summary.');
   applyManualState(result);sqlIndicators();
   renderCalculation(result,true);
+  if(data.savedAt)dirty=true;
+  workingModified=true;statusDetail.textContent='';renderReportStatus();
   if(selected)select(selected);
  }
  const coopSyncStatus=document.querySelector('#coop-sync-status');
@@ -601,6 +652,7 @@
   return Object.entries(data.total).some(([ref,value])=>value===null&&!manual(ref)&&data.sqlLatest[ref]==null);
  }
  function refreshCoop(){
+  if(data.savedAt)return Promise.resolve();
   const month=data.month;
   pending=pending.catch(()=>{}).then(async()=>{
    if(month!==data.month)return;
@@ -615,7 +667,7 @@
   });
   return pending;
  }
- window.genstatReport={confirmAction,refreshRecoveredSales,refreshCoop,notifySettings:notifyReport,notifyRecoveredSalesSaved:()=>notifyReport('Recovered Sales saved and GENSTAT summary updated successfully.'),snapshot:()=>({month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,values:structuredClone(data.values),formulas:structuredClone(data.formulas),sqlReplacements:structuredClone(data.sqlReplacements),sqlSources:structuredClone(data.sqlSources)}),
+ window.genstatReport={confirmAction,refreshRecoveredSales,refreshCoop,notifySettings:notifyReport,notifyRecoveredSalesSaved:()=>notifyReport('Recovered Sales saved and GENSTAT summary updated successfully.'),snapshot:()=>({month:data.month,csrf:data.csrf,hash:data.hash,revision:data.revision,workingId:data.workingId,snapshotRevision:data.snapshotRevision,values:structuredClone(data.values),formulas:structuredClone(data.formulas),sqlReplacements:structuredClone(data.sqlReplacements),sqlSources:structuredClone(data.sqlSources)}),
   previewContext:()=>({preview:data.preview,total:data.total,previewToken:data.previewToken}),
   disableSqlLabels(rowKey){setRestoreRecovery(null);
    for(const [ref,key] of Object.entries(data.sqlTargets))if(key===rowKey)delete data.sqlTargets[ref];
@@ -629,7 +681,7 @@
    data.sqlReplacements=result.sqlReplacements??data.sqlReplacements;
    data.sqlSources=result.sqlSources??data.sqlSources;
    dirty=true;
-   status.textContent='SQL values applied · Unsaved changes';
+   statusDetail.textContent='SQL values applied · Unsaved changes';
    if(result.previewContext){
     const coopTargets=Object.fromEntries(Object.entries(data.sqlTargets).filter(([,source])=>source==='coop-registered-accounts'));
     Object.assign(data,result.previewContext);
@@ -638,7 +690,7 @@
     return;
    }
    sqlIndicators();
-   const refreshTotal=Boolean(result.record?.template_row_key.endsWith('/A18'));
+   const refreshTotal=!data.savedAt&&Boolean(result.record?.template_row_key.endsWith('/A18'));
    if(refreshTotal||Object.keys(data.preview).length||Object.keys(data.total).length){
     const version=++sequence;
     pending=pending.catch(()=>{}).then(()=>request('calculate',{refreshTotal})).then(calculation=>{
@@ -649,9 +701,9 @@
       data.configuredRows=calculation.configuredRows??data.configuredRows;
       if(Object.hasOwn(calculation,'coopSyncWarning')){data.coopSyncWarning=calculation.coopSyncWarning;displayCoopSync();}
       renderCalculation(calculation,true);if(selected)select(selected);
-      if(soldTotalUnavailable())status.textContent='Total KWH Sold is unavailable.';
+      if(soldTotalUnavailable())statusDetail.textContent='Total KWH Sold is unavailable.';
      }
-    }).catch(e=>{status.textContent=e.message;status.classList.add('error');});
+    }).catch(e=>{statusDetail.textContent=e.message;statusDetail.classList.add('error');});
    }else{renderCalculation(result.calculation,true);if(selected)select(selected);}
   },
   ready:()=>pending};
@@ -675,14 +727,14 @@
   confirmationButton.disabled=true;
   try{
    await pending;
-   status.classList.remove('error');
-   status.textContent=undo?'Recovering previous formulas…':'Restoring report…';
+   statusDetail.classList.remove('error');
+   statusDetail.textContent=undo?'Recovering previous formulas…':'Restoring report…';
    const result=await request(undo?'undo-restore':'restore-report',undo?{undoToken:recovery.token}:{});
    if(result.month!==data.month||!result.calculation?.cells||!result.values||!result.formulas||!result.sqlReplacements||!result.sqlSources||!result.preview||!result.total||(!undo&&!result.sqlTargets))throw Error('The restoration response is incomplete.');
    const {calculation,undoToken,restoredSqlCells,...state}=result;
    Object.assign(data,state);
    displayCoopSync();
-   dirty=false;
+   dirty=Boolean(data.savedAt);calculationFailed=false;
    setRestoreRecovery(undoToken?{token:undoToken}:null);
    const restored=new Set(restoredSqlCells);
    manualHistory.clear(command=>command.kind==='sql'&&!restored.has(command.ref));
@@ -691,12 +743,12 @@
    sqlIndicators();
    renderCalculation(calculation,true);
    if(selected)select(selected);
-   status.classList.remove('error');
-   status.textContent=undo?'Draft saved':'Report restored and saved';
-   notifyReport(undo?'Previous report formulas recovered and saved.':'Report formulas and SQL values restored successfully.');
+   statusDetail.classList.remove('error');
+   workingModified=true;pendingInput=false;
+   notifyReport(undo?(data.savedAt?'Previous formulas restored in the working report.':'Previous report formulas recovered and saved.'):'Report formulas and SQL values restored successfully.');
   }catch(e){
-   status.classList.add('error');
-   status.textContent=undo?'Undo Restore failed':'Report restore failed';
+   statusDetail.classList.add('error');
+   statusDetail.textContent=undo?'Undo Restore failed':'Report restore failed';
    notifyReport((undo?'Recovery failed. Your current report has been preserved.':'Restoration failed. Your previous report has been preserved.')+' '+e.message,true);
   }finally{
    setLoading(false);
@@ -709,7 +761,7 @@
  restoreButton.addEventListener('click',async()=>{
   if(loading||saving||exporting)return;
   const month=data.month;
-  const message='This will restore the original Excel template formulas, refresh all configured SQL values, and reapply custom report formulas for the selected reporting period.';
+  const message=data.savedAt?'This will restore the original report formulas and retrieve the latest SQL and Coop Consumption values. Your previously saved monthly report will remain unchanged until you click Save.':'This will restore the original Excel template formulas, refresh all configured SQL values, and reapply custom report formulas for the selected reporting period.';
   if(!await confirmAction(message,{restore:true,detail:formatPeriod(month)}))return;
   if(loading||saving||exporting||data.month!==month)return;
   notifyReport('');
@@ -742,7 +794,7 @@
   monthSelector.value=period;
  }
  function setLoading(active,target,title='Loading GENSTAT Report'){
-  loading=active;overlay.hidden=!active;
+  loading=active;overlay.hidden=!active;renderReportStatus();
   if(active){document.querySelector('#loading-title').textContent=title;document.querySelector('#loading-period').textContent=formatPeriod(target);}
   viewport.setAttribute('aria-busy',String(active));
   for(const section of content)section.inert=active;
@@ -762,7 +814,7 @@
    if(result.month!==target)throw Error('The response belongs to a different reporting period.');
    if(!result.calculation?.cells||!result.values||!result.formulas||!result.sqlReplacements||!result.sqlSources||!result.sqlTargets||!result.preview||!result.total)throw Error('The reporting response is incomplete.');
    Object.assign(data,result);
-   failedEdits.clear();
+   failedEdits.clear();calculationFailed=false;
    displayCoopSync();
    syncSelectors(target);
    selectRowLabel(null);
@@ -773,12 +825,12 @@
    dirty=false;sqlIndicators();renderCalculation(result.calculation,true);
    const label=formatPeriod(target);periodLabel.textContent=label;table.setAttribute('aria-label',label+' KWH purchased, sold and system losses');
    const url=new URL(location.href);url.searchParams.set('month',target);history.replaceState(null,'',url);
-   status.textContent=(data.revision?'Draft loaded. ':'')+(soldTotalUnavailable()?'Total KWH Sold is unavailable.':Object.keys(data.preview).length||Object.keys(data.total).length?'SQL results loaded.':'No saved SQL preview values.');
-   status.classList.remove('error');failedMonth=null;
+   workingModified=false;saveFailed=false;pendingInput=false;statusDetail.textContent='';
+   statusDetail.classList.remove('error');failedMonth=null;
   }catch(e){
    if(version!==loadSequence)return;
    syncSelectors(data.month);failedMonth=target;retry.hidden=false;
-   status.textContent='Could not load '+formatPeriod(target)+'. '+e.message;status.classList.add('error');
+   statusDetail.textContent='Could not load '+formatPeriod(target)+'. '+e.message;statusDetail.classList.add('error');
   }finally{if(version===loadSequence)setLoading(false);}
  }
  yearSelector.addEventListener('change',()=>{
@@ -795,8 +847,8 @@
    const blob=await request('export'),url=URL.createObjectURL(blob);
    const link=document.createElement('a');link.href=url;link.download='PALECO-GenStat-'+data.month+'.xlsx';link.click();
    setTimeout(()=>URL.revokeObjectURL(url),1000);
-   status.textContent='Excel exported';status.classList.remove('error');
-  }catch(e){status.textContent=e.message;status.classList.add('error');}
+   statusDetail.textContent='';statusDetail.classList.remove('error');
+  }catch(e){statusDetail.textContent=e.message;statusDetail.classList.add('error');}
   finally{exporting=false;exportButton.disabled=false;}
  });
  addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});

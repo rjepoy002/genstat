@@ -5,6 +5,7 @@ require_once __DIR__.'/lib/files.php';
 require_once __DIR__.'/lib/coop-summary.php';
 require_once __DIR__.'/lib/base-report-view.php';
 require_once __DIR__.'/lib/settings-security.php';
+require_once __DIR__.'/lib/ui-icons.php';
 settings_session_start();$_SESSION['baseCsrf']??=bin2hex(random_bytes(32));
 if($_SERVER['REQUEST_METHOD']==='GET')settings_revoke();
 function bh($v): string{return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8');}
@@ -15,31 +16,50 @@ try{
   if(!base_report_valid_month($body['month']??null)||!is_string($body['csrf']??null)||!hash_equals(base_report_csrf($body['month']),$body['csrf']))throw new RuntimeException('Invalid session token.');
  }
  $restoring=$post&&in_array($body['action']??null,['restore-report','undo-restore'],true);
- $months=$restoring&&($_SESSION['baseReportMonth']??null)===$body['month']?[$body['month']]:qs_available_months();
  $loading=$post&&($body['action']??null)==='load-period';
- if($loading&&!base_report_valid_month($body['targetMonth']??null))throw new QuerySettingsError('Select an available reporting month.');
- $month=qs_select_month($months,$post?($loading?$body['targetMonth']:$body['month']):($_GET['month']??null),$_SESSION['baseReportMonth']??null);
- $l=base_report_layout();$l['reportMonth']=$month;$s=$l['sheets'][0];$report=$l['report'];$path=base_report_draft_path($l);$scope=base_report_scope($l);
+ $requested=$post?($loading?($body['targetMonth']??null):$body['month']):($_GET['month']??null);
+ if(($requested!==null||$loading)&&!base_report_valid_month($requested))throw new QuerySettingsError('Select an available reporting month.');
+ $months=monthly_snapshot_available($requested,$_SESSION['baseReportMonth']??null,$post&&!$loading);
+ $month=qs_select_month($months,$requested,$_SESSION['baseReportMonth']??null);
+ $l=base_report_layout();$l['reportMonth']=$month;$s=$l['sheets'][0];$report=$l['report'];$scope=base_report_scope($l);
  try{$l['coopAreaTargets']=coop_summary_targets($l);}catch(DomainException){$l['coopAreaTargets']=[];}
- $draft=base_report_read_draft($l);
- if(isset($_SESSION['baseSqlManualTargets'][$scope]))$l['sqlManualTargets']=$_SESSION['baseSqlManualTargets'][$scope];
+ $snapshot=monthly_snapshot_read($month,$l);
+ $draft=monthly_snapshot_draft($l,$snapshot);
+ $snapshotRevision=$snapshot['revision']??0;
+ if($post&&!hash_equals($l['sha256'],(string)($body['hash']??'')))throw new RuntimeException('Source changed. Reload before editing.');
+ if(!$post||$loading){
+  [$context,$calc]=monthly_snapshot_load($l,$draft,$snapshot);
+  $l=monthly_snapshot_layout($l,$context);
+  $total=$context['total'];$preview=$context['preview'];
+  $reportSql=$context;
+  $_SESSION['baseSqlManualTargets'][$scope]=$context['sqlTargets'];
+  $workingId=monthly_snapshot_start_working($l,$snapshotRevision,$context);
+  unset($_SESSION['baseWorksheetUnlock'],$_SESSION['baseRestoreOperation'][$scope],$_SESSION['baseRestoredFormulaGrants'][$scope]);
+  $_SESSION['baseReportMonth']=$month;
+ }
  if($post){
-  if(!hash_equals($l['sha256'],(string)($body['hash']??'')))throw new RuntimeException('Source changed. Reload before editing.');
   if($loading){
-   $preview=base_report_sql($l);
-   $l['sqlManualTargets']=$preview['sqlTargets'];
-   $_SESSION['baseSqlManualTargets'][$scope]=$l['sqlManualTargets'];
-   $calculation=base_report_calculate($l,$draft['values']+$preview['values'],$draft['formulas'],$draft['sqlReplacements'],$preview['total']);
-   $calculation['warnings']=array_merge($calculation['warnings'],$preview['sqlWarnings']);
-   $response=['month'=>$month,'csrf'=>base_report_csrf($month),'revision'=>$draft['revision'],'values'=>(object)$draft['values'],'formulas'=>(object)$draft['formulas'],'sqlReplacements'=>(object)$draft['sqlReplacements'],'sqlSources'=>(object)qs_verified_value_sources($l,$draft['values'],$draft['sqlSources']),'sqlTargets'=>(object)$preview['sqlTargets'],'configuredRows'=>$preview['configuredRows'],'coopSyncWarning'=>$preview['coopSyncWarning'],'preview'=>(object)$preview['values'],'total'=>(object)$preview['total'],'previewToken'=>qs_period_preview_token($l,$preview['values'],$preview['total']),'calculation'=>$calculation,'formulaAudit'=>base_report_formula_audit($l)];
-   $json=json_encode($response+base_sql_manual_public($l),JSON_THROW_ON_ERROR);
-   unset($_SESSION['baseWorksheetUnlock']);
-   $_SESSION['baseReportMonth']=$month;
-   echo $json;exit;
+   echo json_encode(['month'=>$month,'csrf'=>base_report_csrf($month),'periods'=>$months,
+    'revision'=>$draft['revision'],'workingId'=>$workingId,'snapshotRevision'=>$snapshotRevision,'savedAt'=>$snapshot['savedAt']??null,
+    'values'=>(object)$draft['values'],'formulas'=>(object)$draft['formulas'],'sqlReplacements'=>(object)$draft['sqlReplacements'],
+    'sqlSources'=>(object)qs_verified_value_sources($l,$draft['values'],$draft['sqlSources']),
+    'sqlTargets'=>(object)$context['sqlTargets'],'configuredRows'=>$context['configuredRows'],'coopSyncWarning'=>$context['coopSyncWarning'],
+    'preview'=>(object)$preview,'total'=>(object)$total,'previewToken'=>qs_period_preview_token($l,$preview,$total),
+    'calculation'=>$calc,'formulaAudit'=>base_report_formula_audit($l,$draft)]+base_sql_manual_public($l,$context['manual']),JSON_THROW_ON_ERROR);
+   exit;
+  }
+  $workingId=$body['workingId']??null;
+  $working=monthly_snapshot_get_working($l,$workingId);
+  if($working!==null)$l['monthlyWorkingId']=$workingId;
+  if($snapshot&&(($body['snapshotRevision']??null)!==$snapshotRevision||($working['revision']??null)!==$snapshotRevision))
+   throw new MonthlySnapshotError('The saved month changed. Reopen it before continuing.');
+  if($working!==null){
+   if($snapshot)$l['monthlySnapshotWorking']=true;
+   $context=$working['context'];
+   $l=monthly_snapshot_layout($l,$context);
   }
   if(in_array($body['action']??null,['recovered-sales-load','recovered-sales-save'],true)){
    require_once __DIR__.'/lib/recovered-sales.php';
-   session_write_close();
    $areas=array_keys(recov_area_columns($l));
    $view=$body['action']==='recovered-sales-save'
     ?recov_save(__DIR__,$month,$body,(string)($_SERVER['REMOTE_USER']??''),$areas)
@@ -58,10 +78,22 @@ try{
   }else{
    if($restoring)throw new RuntimeException('Reload the reporting period before restoring it.');
    if($preview||$total)throw new RuntimeException('Missing report preview authorization.');
+   if($snapshot||in_array($body['action'],['save','export'],true))throw new MonthlySnapshotError('Reopen the report before continuing.');
    $reportSql=base_report_sql($l,true);$total=$reportSql['total'];
   }
-  if($body['action']==='calculate'&&($body['refreshTotal']??false)===true){$reportSql??=base_report_sql($l,true);$total=$reportSql['total'];}
-  if($reportSql!==null)$l['sqlManualTargets']=$_SESSION['baseSqlManualTargets'][$scope]=$reportSql['sqlTargets'];
+  if($working!==null&&$body['action']==='calculate'&&($body['refreshRecoveredSales']??false)===true){
+   $context['recovery']=base_report_recovery_state($l);
+   $l=monthly_snapshot_layout($l,$context);
+   monthly_snapshot_update_working($l,$snapshotRevision,$context);
+  }
+  if(!$snapshot&&$body['action']==='calculate'&&($body['refreshTotal']??false)===true){$reportSql??=base_report_sql($l,true);$total=$reportSql['total'];}
+  if($reportSql!==null){
+   $context=monthly_snapshot_context($l,$reportSql,$working['context']['recovery']??null);
+   $context['preview']=$preview;
+   $l=monthly_snapshot_layout($l,$context);
+   $_SESSION['baseSqlManualTargets'][$scope]=$context['sqlTargets'];
+   monthly_snapshot_update_working($l,0,$context);
+  }
   $approved=$_SESSION['baseRestoredFormulaGrants'][$scope]??[];
   foreach(array_keys($formulas+$draft['formulas']) as $ref){
    $current=$formulas[$ref]??null;
@@ -80,7 +112,7 @@ try{
       ||base_report_row_hidden($s['cells']['A'.$cell['metadata']['row']]['value']??'')||isset(recov_targets($l)[$ref]))
     throw new RuntimeException('Select an editable SQL cell.');
    if(($_SESSION['baseReportMonth']??null)!==$month)throw new RuntimeException('Reload the active reporting month before editing.');
-   $source=$body['action']==='undo-sql-manual'?null:(base_sql_manual_targets($l)[$ref]??null);
+   $source=$body['action']==='undo-sql-manual'?null:(($snapshot?$l['sqlManualTargets']:base_sql_manual_targets($l))[$ref]??null);
    if($source==='coop-registered-accounts'&&!isset($l['sqlManualTargets'][$ref]))$source=null;
    $proof=$total[$ref]??$replacements[$ref]['value']??$preview[$ref]??null;
    if($proof===null&&isset(qs_verified_value_sources($l,$values,$body['sqlSources']??[])[$ref]))$proof=$values[$ref];
@@ -91,7 +123,7 @@ try{
   if(in_array($body['action'],['edit-formula','undo-formula'],true)){
    $undo=$body['action']==='undo-formula';$ref=$body['ref']??null;
    if(!is_string($ref)||!base_report_formula_editable($l,$ref))throw new RuntimeException('Select an editable Excel formula cell.');
-   if(isset($replacements[$ref])||array_key_exists($ref,$total)||array_key_exists($ref,$preview)||isset(base_sql_manual_state($l)['overrides'][$ref]))throw new RuntimeException('This cell is managed by SQL Query Settings.');
+   if(isset($replacements[$ref])||array_key_exists($ref,$total)||array_key_exists($ref,$preview)||isset(($l['sqlManualState']??base_sql_manual_state($l))['overrides'][$ref]))throw new RuntimeException('This cell is managed by SQL Query Settings.');
    $before=$formulas[$ref]??null;
    $history=$_SESSION['baseManualFormulaUndo'][$scope]??[];
    if($undo){
@@ -111,7 +143,7 @@ try{
    $calculation=base_report_calculate($l,$values+$preview,$next,$replacements,$total);
    if(!$undo&&$calculation['cells'][$ref]['error']!==null)throw new RuntimeException($ref.': '.$calculation['cells'][$ref]['error']);
    json_encode($calculation,JSON_THROW_ON_ERROR);
-   $audit=base_report_formula_audit($l);
+   $audit=base_report_formula_audit($l,$draft);
    if($before!==$after)$audit=base_report_append_formula_audit($l,$draft['revision'],$formulas,$next,$undo?'Undo manual formula edit':'Manual formula edit');
    $json=json_encode(['formulas'=>(object)$next,'calculation'=>$calculation,'changed'=>$before!==$after,'editToken'=>!$undo&&$before!==$after?$token:null,'formulaAudit'=>$audit],JSON_THROW_ON_ERROR);
    if($undo)unset($history[$token]);
@@ -122,16 +154,16 @@ try{
   }
   if(in_array($body['action'],['restore-report','undo-restore'],true)){
    require_once __DIR__.'/lib/base-report-restore.php';
-   $current=['values'=>$values,'formulas'=>$formulas,'sqlReplacements'=>$replacements,
+   $current=['draftRevision'=>$draft['revision'],'values'=>$values,'formulas'=>$formulas,'sqlReplacements'=>$replacements,
     'sqlSources'=>qs_verified_value_sources($l,$values,$body['sqlSources']??[]),'preview'=>$preview,'total'=>$total];
    $token=$body['undoToken']??null;
-   echo base_report_restore($l,$draft,$current,$body['action']==='undo-restore',is_string($token)?$token:null);exit;
+   echo base_report_restore($l,$draft,$current,$body['action']==='undo-restore',is_string($token)?$token:null,$snapshot!==null);exit;
   }
-  if($body['action']==='export'){
-   $l['recoveryState']=base_report_recovery_state($l);
-   $l['sqlManualState']=base_sql_manual_state($l);
-  }
-  $result=base_report_calculate($l,$values+$preview,$formulas,$replacements,$total);
+  $sameAsSaved=$snapshot&&$values===$snapshot['values']&&$formulas===$snapshot['formulas']&&
+   $replacements===$snapshot['sqlReplacements']&&($context??null)===$snapshot['context']&&
+   $preview===$snapshot['context']['preview']&&$total===$snapshot['context']['total'];
+  $result=$sameAsSaved?monthly_snapshot_calculation($snapshot['calculation']):
+   base_report_calculate($l,$values+$preview,$formulas,$replacements,$total);
   if($body['action']==='export'){
    require_once __DIR__.'/lib/base-report-export.php';
    $xlsx=base_report_export($l,$values+$preview,$formulas,$replacements,$result,$total);
@@ -139,25 +171,24 @@ try{
    header('Content-Disposition: attachment; filename="PALECO-GenStat-'.$month.'.xlsx"');
    echo $xlsx;exit;
   }
-  if(($body['action']??'')==='save'){
-   $lock=fopen($path.'.lock','c');if(!$lock||!flock($lock,LOCK_EX))throw new RuntimeException('Cannot lock draft.');
-   try{$latest=base_report_read_draft($l);if(($body['revision']??-1)!==$latest['revision'])throw new RuntimeException('Another window saved this report. Reload before saving.');
-    sql_replacement_submission($l,$replacements,$latest['sqlReplacements']??[]);$history=$latest['sqlHistory']??[];
-    foreach(array_unique(array_merge(array_keys($latest['sqlReplacements']??[]),array_keys($replacements))) as $ref){$old=$latest['sqlReplacements'][$ref]??null;$new=$replacements[$ref]??null;if(($old['signature']??null)!==($new['signature']??null))$history[]=['cell'=>$ref,'action'=>$new?'SQL formula replacement':'Restore template formula','previous'=>$old,'replacement'=>$new,'at'=>gmdate('c'),'revision'=>$latest['revision']+1];}
-    $draft=array_replace($latest,['values'=>$values,'formulas'=>$formulas,'sqlReplacements'=>(object)$replacements,'sqlHistory'=>$history,'sqlSources'=>(object)qs_verified_value_sources($l,$values,$body['sqlSources']??[]),'revision'=>$latest['revision']+1,'sourceHash'=>$l['sha256'],'reportMonth'=>$month,'savedAt'=>gmdate('c')]);atomic_file_write($path,json_bytes($draft));
-    foreach(array_merge((array)($latest['sqlReplacements']??[]),$replacements) as $record)unset($_SESSION['sqlReplacementGrants'][$record['signature']]);unset($_SESSION['sqlRestoreGrants'][$scope]);
-   }finally{flock($lock,LOCK_UN);fclose($lock);}
+  if($body['action']==='save'){
+   if($working===null)throw new MonthlySnapshotError('Reopen the report before saving.');
+   $context['preview']=$preview;$context['total']=$total;
+   $saved=monthly_snapshot_save($l,$snapshotRevision,[
+    'draftRevision'=>$draft['revision'],'values'=>$values,'formulas'=>$formulas,'sqlReplacements'=>$replacements,
+    'sqlSources'=>qs_verified_value_sources($l,$values,$body['sqlSources']??[]),
+    'formulaDefinitions'=>expanded_formulas($s),'calculation'=>$result,'context'=>$context,
+    'effectiveTotals'=>base_sql_manual_effective($l,$total),
+   ]);
+   monthly_snapshot_update_working($l,$saved['revision'],$saved['context']);
+   $result+=['workingId'=>$l['monthlyWorkingId'],'snapshotRevision'=>$saved['revision'],'savedAt'=>$saved['savedAt']];
   }
   if($reportSql!==null){
    $result['sqlTargets']=(object)$reportSql['sqlTargets'];$result['configuredRows']=$reportSql['configuredRows'];$result['coopSyncWarning']=$reportSql['coopSyncWarning'];
    $result['warnings']=array_merge($result['warnings'],$reportSql['sqlWarnings']);
   }
-  echo json_encode($result+base_sql_manual_public($l)+['revision'=>$draft['revision'],'total'=>(object)$total,'previewToken'=>qs_period_preview_token($l,$preview,$total)],JSON_THROW_ON_ERROR);exit;
+  echo json_encode($result+base_sql_manual_public($l,$l['sqlManualState']??null)+['revision'=>$draft['revision'],'total'=>(object)$total,'previewToken'=>qs_period_preview_token($l,$preview,$total)],JSON_THROW_ON_ERROR);exit;
  }
- $reportSql=base_report_sql($l);$total=$reportSql['total'];$l['sqlManualTargets']=$reportSql['sqlTargets'];
- $_SESSION['baseSqlManualTargets'][$scope]=$l['sqlManualTargets'];
- $calc=base_report_calculate($l,$draft['values'],$draft['formulas'],$draft['sqlReplacements'],$total);
- $calc['warnings']=array_merge($calc['warnings'],$reportSql['sqlWarnings']);
  $effectiveTotal=base_sql_manual_effective($l,$total);
  $soldUnresolved=in_array(null,$effectiveTotal,true);
  $soldFallback=!$soldUnresolved&&in_array(null,$total,true);
@@ -165,7 +196,7 @@ try{
  $_SESSION['baseReportMonth']=$month;$monthLabel=base_report_month_label($month);
 }catch(Throwable $e){
  http_response_code($e instanceof QuerySettingsError&&$e->getCode()===503?503:($e->getCode()===409?409:400));
- $message=!empty($loading)&&!($e instanceof QuerySettingsError)?'The report could not be loaded. Please try again.':$e->getMessage();
+ $message=!empty($loading)&&!($e instanceof QuerySettingsError)&&!($e instanceof MonthlySnapshotError)?'The report could not be loaded. Please try again.':$e->getMessage();
  if($_SERVER['REQUEST_METHOD']==='POST'){header('Content-Type: application/json');echo json_encode(['error'=>$message]);}else echo bh($message);exit;
 }
 $years=array_values(array_unique(array_map(fn($period)=>substr($period,0,4),$months)));$covered=[];$merges=[];$mergeEnds=[];foreach($s['merges'] as $merge){[$a,$b]=explode(':',$merge);[$ac,$ar]=cell_coordinates($a);[$bc,$br]=cell_coordinates($b);if(!range_contains($report['range'],$a)||!range_contains($report['range'],$b))continue;$merges[$a]=[$bc-$ac+1,$br-$ar+1];$mergeEnds[$a]=$b;for($r=$ar;$r<=$br;$r++)for($c=$ac;$c<=$bc;$c++)if(col_name($c).$r!==$a)$covered[col_name($c).$r]=true;}
@@ -183,10 +214,14 @@ $coordinateClass='excel-coordinate bg-slate-100 font-medium text-slate-600 dark:
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PALECO GenStat — KWH report</title><script src="assets/report-appearance.js"></script><link rel="stylesheet" href="assets/tailwind.css"><link rel="stylesheet" href="assets/base-report.css"></head><body>
 <header class="flex items-center border-b border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-800"><strong>PALECO <span>GenStat</span></strong><label class="report-month">Year <select id="report-year"><?php foreach($years as $year):?><option value="<?=bh($year)?>" <?=$year===substr($month,0,4)?'selected':''?>><?=bh($year)?></option><?php endforeach;?></select></label>
 <label class="report-month">Month <select id="report-month"><?php foreach(array_reverse($months) as $option):if(substr($option,0,4)!==substr($month,0,4))continue;?><option value="<?=bh($option)?>" <?=$option===$month?'selected':''?>><?=bh(strtok(base_report_month_label($option),' '))?></option><?php endforeach;?></select></label>
-<span id="report-period" aria-live="polite"><?=bh($monthLabel)?></span><div class="report-toolbar ml-auto flex shrink-0 items-center gap-1" role="group" aria-label="Report actions">
+<span class="inline-flex shrink-0 items-center gap-1.5"><span id="report-period" aria-live="polite"><?=bh($monthLabel)?></span><span id="report-period-status" class="report-status-icon size-4" role="img">
+ <?php foreach(['saved'=>'shield-check','unsaved'=>'cloud-download','pending'=>'circle-alert','loading'=>'spinner'] as $state=>$icon):?>
+ <span data-report-icon="<?=$state?>" hidden><?=ui_icon($icon)?></span>
+ <?php endforeach;?>
+</span></span><div class="report-toolbar ml-auto flex shrink-0 items-center gap-1" role="group" aria-label="Report actions">
  <button id="report-export" type="button" class="report-icon inline-flex report-labeled-action h-9 items-center justify-center gap-2 rounded-lg font-medium transition-colors duration-150" aria-label="Export Excel" data-tooltip="Export Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 9v12m6-12v12"/></svg><span class="report-action-label">Export Excel</span></button>
  <span class="report-toolbar-divider" aria-hidden="true"></span>
- <button id="save" type="button" class="report-icon inline-flex report-labeled-action h-9 items-center justify-center gap-2 rounded-lg font-medium transition-colors duration-150" aria-label="Save Draft" data-tooltip="Save Draft"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h13l4 4v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm3 0v6h9V3m1 18v-8H7v8"/></svg><span class="save-spinner" aria-hidden="true"></span><span class="report-action-label">Save</span></button>
+ <button id="save" type="button" class="report-icon inline-flex report-labeled-action h-9 items-center justify-center gap-2 rounded-lg font-medium transition-colors duration-150" aria-label="Save monthly report" data-tooltip="Save monthly report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h13l4 4v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm3 0v6h9V3m1 18v-8H7v8"/></svg><span class="save-spinner" aria-hidden="true"></span><span class="report-action-label">Save</span></button>
  <span class="report-toolbar-divider" aria-hidden="true"></span>
  <button id="recovered-sales-open" type="button" class="report-icon inline-flex report-labeled-action h-9 items-center justify-center gap-2 rounded-lg font-medium transition-colors duration-150" aria-label="Recovered Sales" data-tooltip="Recovered Sales" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M8 13h2m4 0h2m-8 4h2m4 0h2"/></svg><span class="report-action-label">Recovered Sales</span></button>
  <button id="undo-formula" type="button" class="report-icon inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors duration-150" title="Undo SQL Cell Edit" aria-label="Undo SQL Cell Edit" data-tooltip="Undo SQL Cell Edit" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
@@ -216,11 +251,24 @@ $visibleSpan=0;for($column=$c;$column<$c+$span[0];$column++)if(isset($widths[$co
 $headingText=$fullHeading?implode("\n",array_column($areaHeaders[$c]['fragments']??[['value'=>$cell['value']]],'value')):null;
 ?><<?=$tag?> data-ref="<?=$ref?>" <?=isset($mergeEnds[$ref])?'data-excel-range-end="'.bh($mergeEnds[$ref]).'"':''?> <?=$visibleSpan===0?'hidden':''?> data-classification="<?=bh($cell['classification'])?>" <?=base_report_formula_editable($l,$ref)?'data-original-formula-editable':''?> <?=!empty($calc['cells'][$ref]['error'])?'data-calculation-error':''?> <?=$rowToggle?'':'tabindex="0"'?> aria-readonly="<?=$cell['editable']?'false':'true'?>" colspan="<?=max(1,$visibleSpan)?>" rowspan="<?=$span[1]?>" class="<?=$c===1?'particulars ':''?><?=$c>=$totalStart?'total-column ':''?><?=$tag==='th'?'header-cell':''?>" style="<?=bh(css_text($css))?>" <?=$c===1?'aria-label="'.bh($cell['value']).'"':''?> title="<?=bh($ref.' · '.$cell['classification'].($c===1?' · '.$cell['value']:'').($cell['formula']!==null?' · '.(expanded_formulas($s)[$ref]??$cell['formula']):''))?>">
 
-<?php if($fullHeading):?><span class="value"><?=bh($headingText)?></span><?php elseif($rowToggle):?><button type="button" class="report-row-toggle block w-full cursor-pointer" aria-pressed="false"><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span></button><?php elseif($cell['editable']&&!property_exists($calc['recoveredSales'],$ref)):?><input <?=array_key_exists($ref,$total)?'readonly':''?> aria-label="<?=bh($ref.' '.$cell['classification'])?>" data-ref="<?=$ref?>" value="<?=bh(array_key_exists($ref,$total)?($total[$ref]??''):($draft['values'][$ref]??($month!==BASE_REPORT_LEGACY_MONTH&&is_numeric($cell['value'])?'':$cell['value'])))?>"><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span><?php else:?><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span><?php endif;?></<?=$tag?>>
+<?php if($fullHeading):?><span class="value"><?=bh($headingText)?></span><?php elseif($rowToggle):?><button type="button" class="report-row-toggle block w-full cursor-pointer" aria-pressed="false"><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span></button><?php elseif($cell['editable']&&!property_exists($calc['recoveredSales'],$ref)):?><input <?=array_key_exists($ref,$total)?'readonly':''?> aria-label="<?=bh($ref.' '.$cell['classification'])?>" data-ref="<?=$ref?>" value="<?=bh(array_key_exists($ref,$total)?($total[$ref]??''):($draft['values'][$ref]??$preview[$ref]??($month!==BASE_REPORT_LEGACY_MONTH&&is_numeric($cell['value'])?'':$cell['value'])))?>"><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span><?php else:?><span class="value"><?=bh($calc['cells'][$ref]['display']??'')?></span><?php endif;?></<?=$tag?>>
 <?php endforeach;?></tr><?php endfor;?></tbody></table></main>
 <footer class="flex items-center justify-between gap-2 w-full">
  <div class="min-w-0"><?=bh($s['name'].'!'.$renderedRange)?> · <span id="fit-status">Report table</span> · <span id="cell-kind">Formula cells protected</span></div>
- <div class="report-draft flex items-center justify-end gap-2 text-right text-xs text-slate-600 dark:text-slate-300"><div class="report-footer-notices flex min-w-0 flex-wrap items-center justify-end gap-2"><span id="coop-sync-status" role="status" class="text-red-700 dark:text-red-400"><?=bh($reportSql['coopSyncWarning']??'')?></span><span id="restore-notice" role="status" class="rounded-md bg-emerald-50 px-2 py-1 text-emerald-900 empty:absolute empty:p-0 data-[error]:bg-red-50 data-[error]:text-red-900 dark:bg-emerald-950 dark:text-emerald-100 dark:data-[error]:bg-red-950 dark:data-[error]:text-red-100"></span><button id="undo-restore" class="rounded-md border border-slate-300! px-2! py-1! font-semibold focus-visible:ring-2 focus-visible:ring-blue-600 dark:border-slate-600!" type="button" hidden>Undo Restore</button><button id="report-retry" type="button" hidden>Retry</button></div><div class="report-save-state inline-flex items-center justify-end gap-1"><svg id="report-save-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="m20 6-11 11-5-5"/></svg><span id="status" role="status"><?=$draft['revision']>0?'Draft loaded':'No saved report data.'?><?=$soldUnresolved?' Total KWH Sold is unavailable.':($soldFallback?' Total KWH Sold uses the last valid SQL values.':'')?></span></div></div>
+ <div class="report-draft flex items-center justify-end gap-2 text-right text-xs text-slate-600 dark:text-slate-300"><div class="report-footer-notices flex min-w-0 flex-wrap items-center justify-end gap-2"><span id="coop-sync-status" role="status" class="text-red-700 dark:text-red-400"><?=bh($reportSql['coopSyncWarning']??'')?></span><span id="restore-notice" role="status" class="rounded-md bg-emerald-50 px-2 py-1 text-emerald-900 empty:absolute empty:p-0 data-[error]:bg-red-50 data-[error]:text-red-900 dark:bg-emerald-950 dark:text-emerald-100 dark:data-[error]:bg-red-950 dark:data-[error]:text-red-100"></span><button id="undo-restore" class="rounded-md border border-slate-300! px-2! py-1! font-semibold focus-visible:ring-2 focus-visible:ring-blue-600 dark:border-slate-600!" type="button" hidden>Undo Restore</button><button id="report-retry" type="button" hidden>Retry</button></div><div class="report-save-state flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1">
+  <span id="status" class="inline-flex items-center gap-1.5" role="status">
+   <span class="report-status-icon size-3.5" aria-hidden="true">
+    <?php foreach(['saved'=>'circle-check','unsaved'=>'sync','pending'=>'circle-alert','loading'=>'spinner'] as $state=>$icon):?>
+    <span data-report-icon="<?=$state?>" hidden><?=ui_icon($icon)?></span>
+    <?php endforeach;?>
+   </span>
+   <span id="report-status-primary" class="font-medium"></span>
+   <span id="report-status-separator" aria-hidden="true" hidden>&middot;</span>
+   <span id="report-status-secondary" class="text-slate-500 dark:text-slate-400"></span>
+  </span>
+  <time id="report-saved-at" class="shrink-0 text-slate-500 dark:text-slate-400" hidden></time>
+  <span id="report-status-detail" role="status"><?=$soldUnresolved?'Total KWH Sold is unavailable.':($soldFallback?'Total KWH Sold uses the last valid SQL values.':'')?></span>
+ </div></div>
  <div hidden><span id="report-warning-count"></span><span id="report-error-count" hidden></span><ul id="warnings"></ul></div>
 </footer>
 <div id="report-loading-overlay" class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm" role="status" aria-live="polite" hidden>
@@ -253,4 +301,4 @@ $headingText=$fullHeading?implode("\n",array_column($areaHeaders[$c]['fragments'
  </form>
 </dialog>
 <dialog id="report-formula-history-dialog" class="fixed inset-0 m-auto w-[min(540px,92vw)] rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl backdrop:bg-black/60 dark:border-gs-border dark:bg-gs-surface dark:text-gs-text" aria-labelledby="report-formula-history-title"><form method="dialog"><h2 id="report-formula-history-title" class="m-0 text-lg font-semibold">Formula Edit History</h2><p id="report-formula-history-empty">No manual formula changes have been recorded.</p><ol id="report-formula-history-list" class="space-y-3 break-words p-0"></ol><button autofocus class="rounded-md focus-visible:ring-2">Close</button></form></dialog>
-<script type="application/json" id="report-data"><?=json_encode(['recoveredSales'=>$calc['recoveredSales'],'total'=>(object)$total,'sqlTargets'=>(object)$reportSql['sqlTargets'],'coopSyncWarning'=>$reportSql['coopSyncWarning'],'sqlSources'=>(object)qs_verified_value_sources($l,$draft['values'],$draft['sqlSources']),'previewToken'=>qs_period_preview_token($l,[],$total),'periods'=>$months,'csrf'=>base_report_csrf($month),'month'=>$month,'hash'=>$l['sha256'],'revision'=>$draft['revision'],'values'=>(object)$draft['values'],'formulas'=>(object)$draft['formulas'],'sqlReplacements'=>(object)$draft['sqlReplacements'],'metadata'=>array_map(fn($c)=>$c['metadata'],$s['cells']),'formulaAudit'=>base_report_formula_audit($l),'warnings'=>$calc['warnings'],'errors'=>$calc['errors']]+base_sql_manual_public($l),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR)?></script><script src="assets/formula-references.js"></script><script src="assets/base-reference-highlights.js"></script><script src="assets/edit-history.js"></script><script src="assets/worksheet-keys.js"></script><script src="assets/base-report.js"></script><script src="assets/sql-settings.js"></script><script src="assets/coop-registered-accounts.js"></script><script src="assets/coop-phase1.js"></script><script src="assets/recovered-sales.js"></script></body></html>
+<script type="application/json" id="report-data"><?=json_encode(['recoveredSales'=>$calc['recoveredSales'],'total'=>(object)$total,'sqlTargets'=>(object)$reportSql['sqlTargets'],'coopSyncWarning'=>$reportSql['coopSyncWarning'],'sqlSources'=>(object)qs_verified_value_sources($l,$draft['values'],$draft['sqlSources']),'preview'=>(object)$preview,'previewToken'=>qs_period_preview_token($l,$preview,$total),'workingId'=>$workingId,'snapshotRevision'=>$snapshotRevision,'savedAt'=>$snapshot['savedAt']??null,'periods'=>$months,'csrf'=>base_report_csrf($month),'month'=>$month,'hash'=>$l['sha256'],'revision'=>$draft['revision'],'values'=>(object)$draft['values'],'formulas'=>(object)$draft['formulas'],'sqlReplacements'=>(object)$draft['sqlReplacements'],'metadata'=>array_map(fn($c)=>$c['metadata'],$s['cells']),'formulaAudit'=>base_report_formula_audit($l,$draft),'warnings'=>$calc['warnings'],'errors'=>$calc['errors']]+base_sql_manual_public($l,$context['manual']),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR)?></script><script src="assets/formula-references.js"></script><script src="assets/base-reference-highlights.js"></script><script src="assets/edit-history.js"></script><script src="assets/worksheet-keys.js"></script><script src="assets/base-report.js"></script><script src="assets/sql-settings.js"></script><script src="assets/coop-registered-accounts.js"></script><script src="assets/coop-phase1.js"></script><script src="assets/recovered-sales.js"></script></body></html>

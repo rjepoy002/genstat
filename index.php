@@ -13,20 +13,7 @@ $widths=[];$columnStyles=[];$xx=[1=>36];for($c=1;$c<=$maxCol;$c++){$w=$defaults[
 $heights=[];$yy=[1=>24];for($r=1;$r<=$maxRow;$r++){$row=$s['rows'][$r]??[];$heights[$r]=($row['hidden']??'0')==='1'?0:(float)($row['ht']??$defaults['defaultRowHeight'])*96/72;$yy[$r+1]=$yy[$r]+$heights[$r];}
 $merge=[];$covered=[];foreach($s['merges'] as $range){preg_match('/([A-Z]+)(\d+):([A-Z]+)(\d+)/',$range,$m);$c1=col_num($m[1]);$r1=(int)$m[2];$c2=col_num($m[3]);$r2=(int)$m[4];$merge[$m[1].$r1]=[$c2,$r2];for($r=$r1;$r<=$r2;$r++)for($c=$c1;$c<=$c2;$c++)if($r!==$r1||$c!==$c1)$covered[col_name($c).$r]=true;}
 $totalW=$xx[$maxCol+1];$totalH=$yy[$maxRow+1];
-function ui_icon(string $name): string {
- $paths=[
-  'bolt'=>'M13 2 4 14h7l-1 8 10-12h-7l1-8Z',
-  'open'=>'M3 7h6l2 3h10l-3 10H3V7Zm0 0V4h6l2 3h8v3',
-  'save'=>'M5 3h12l4 4v14H3V3h2Zm2 0v6h10V3M7 21v-8h10v8',
-  'export'=>'M12 3v12m-5-5 5 5 5-5M4 15v6h16v-6',
-  'lock'=>'M6 11h12v10H6V11Zm3 0V7a3 3 0 0 1 6 0v4m-3 4v2',
-  'history'=>'M3 12a9 9 0 1 1 2.6 6.4M3 5v7h7m2-5v5l4 2',
-  'zoom'=>'M21 21l-6-6m2-6a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z',
-  'sync'=>'M20 7v5h-5M4 17v-5h5M5 8a8 8 0 0 1 13-3l2 3M4 16l2 3a8 8 0 0 0 13-3',
-  'warning'=>'m12 3 10 18H2L12 3Zm0 6v5m0 3h.01',
- ];
- return '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'.$paths[$name].'"/></svg>';
-}
+require_once __DIR__.'/lib/ui-icons.php';
 
 ?><!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="layout-hash" content="<?=h(hash_file('sha256',ROOT.'/config/layout.json'))?>"><meta name="template-hash" content="<?=h($l['sha256'])?>"><meta name="csrf-token" content="<?=h($_SESSION['csrf'])?>"><title>PALECO GenStat</title><script src="assets/report-appearance.js"></script><link rel="stylesheet" href="assets/tailwind.css"><link rel="stylesheet" href="assets/app.css"><script src="assets/formula-references.js" defer></script><script src="assets/reference-highlights.js" defer></script><script src="assets/edit-history.js" defer></script><script src="assets/worksheet-keys.js" defer></script><script src="assets/app.js" defer></script></head>

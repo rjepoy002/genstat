@@ -75,8 +75,8 @@ function base_sql_manual_edit(array $layout,string $action,string $ref,array $bo
  $actor=$_SERVER['REMOTE_USER']??$_SESSION['username']??null;
  if(!is_string($actor)||$actor==='')$actor=null;
  $command=null;$calculation=null;
- $state=base_sql_manual_write($layout,function($state)use($layout,$action,$ref,$body,$source,$proof,$undo,$actor,$calculate,&$command,&$calculation){
-  if(base_report_read_draft($layout)['revision']!==$body['revision'])
+ $edit=function($state)use($layout,$action,$ref,$body,$source,$proof,$undo,$actor,$calculate,&$command,&$calculation){
+  if(!isset($layout['monthlySnapshotWorking'])&&base_report_read_draft($layout)['revision']!==$body['revision'])
    throw new RuntimeException('Another window saved this report. Reload before editing.');
   $before=$state['overrides'][$ref]??null;
   $latest=$state['latest'][$ref]['value']??null;
@@ -128,7 +128,14 @@ function base_sql_manual_edit(array $layout,string $action,string $ref,array $bo
   $calculation=$calculate($state);
   json_encode($calculation,JSON_THROW_ON_ERROR);
   return $state;
- });
+ };
+ if(isset($layout['monthlySnapshotWorking'])){
+  $state=$edit($layout['sqlManualState']);
+ }else{
+  $state=base_sql_manual_write($layout,$edit);
+ }
+ $working=monthly_snapshot_get_working($layout,$layout['monthlyWorkingId']??null);
+ if($working!==null)monthly_snapshot_update_working($layout,$working['revision'],array_replace($working['context'],['manual'=>$state]));
  if($command){
   if($undo)unset($history[$token]);else $history[$token]=$command;
   $_SESSION['baseSqlManualUndo'][$scope]=array_slice($history,-50,null,true);

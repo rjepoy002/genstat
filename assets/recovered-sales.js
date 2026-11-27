@@ -96,8 +96,8 @@
  }
 
  open.addEventListener('click',async()=>{
-  const {month,csrf,hash}=report.snapshot();
-  context={month,csrf,hash};
+  const {month,csrf,hash,workingId,snapshotRevision}=report.snapshot();
+  context={month,csrf,hash,workingId,snapshotRevision};
   dirty=false;pendingSync=false;deleted=[];rows.replaceChildren();fields.hidden=true;
   period.textContent=document.querySelector('#report-period').textContent+' · RecovBill';
   status.textContent='Loading recovered sales…';

@@ -44,9 +44,15 @@ html.dark #report-theme-toggle [data-theme-icon="moon"]{display:none}
 #save[aria-busy="true"] .save-spinner{display:block}
 @media(prefers-reduced-motion:reduce){.report-icon,.total-chevron{transition:none}.save-spinner{animation:none}}
 .report-draft{min-width:0;overflow-wrap:anywhere}
-.report-save-state{min-width:min(100%,17ch)}
-#report-save-check{flex:none;color:#15803d}
-#report-save-check[hidden]{display:none}
+.report-status-icon{display:inline-flex;flex:none;color:#64748b}
+.report-status-icon svg{display:block;width:100%;height:100%}
+.report-status-icon [data-report-icon]{width:100%;height:100%}
+.report-status-icon [hidden],#report-saved-at[hidden],#report-status-separator[hidden],#report-status-detail:empty{display:none}
+[data-state="saved"] .report-status-icon,#report-period-status[data-state="saved"]{color:#15803d}
+[data-state="pending"] .report-status-icon,#report-period-status[data-state="pending"]{color:#b45309}
+[data-report-icon="loading"]:not([hidden]){animation:spin 1s linear infinite}
+@media(prefers-reduced-motion:reduce){[data-report-icon="loading"]:not([hidden]){animation:none}}
+
 .report-footer-notices #coop-sync-status:empty,
 .report-footer-notices:not(:has([role="status"]:not(:empty),button:not([hidden]))){display:none}
 .report-scroll{flex:1;min-height:0;overflow:auto;background:#fff;margin:2px 8px 3px;isolation:isolate;border:1px solid #c8d3df;scrollbar-gutter:stable}
@@ -115,7 +121,9 @@ html.dark .report-toolbar-divider{background:var(--gs-border)}
 html.dark .report-toolbar #report-export{background:#173a2a;border-color:#315242;color:#b3dec2}
 html.dark .report-toolbar #report-export:hover:not(:disabled){background:#204a35;color:#d0efda}
 html.dark .report-toolbar :is(#save,#recovered-sales-open){border-color:transparent}
-html.dark #report-save-check{color:#86cf9e}
+html.dark .report-status-icon{color:#94a3b8}
+html.dark [data-state="saved"] .report-status-icon,html.dark #report-period-status[data-state="saved"]{color:#86cf9e}
+html.dark [data-state="pending"] .report-status-icon,html.dark #report-period-status[data-state="pending"]{color:#fbbf24}
 html.dark :is(button,select,input,summary):focus-visible{outline:2px solid var(--gs-selection);outline-offset:2px}
 html.dark :is(.report-icon[data-tooltip]::after,#restore-sql-tooltip){background:var(--gs-toolbar);color:var(--gs-text);border:1px solid var(--gs-border)}
 html.dark #genstat-report-table .report-row-toggle{background:transparent;color:inherit}

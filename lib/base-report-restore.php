@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-function base_report_restore(array $layout,array $draft,array $current,bool $undo,?string $undoToken): string {
+function base_report_restore(array $layout,array $draft,array $current,bool $undo,?string $undoToken,bool $workingOnly=false): string {
  $path=base_report_draft_path($layout);$scope=base_report_scope($layout);
- $initialManual=base_sql_manual_state($layout,$draft);
+ $initialManual=$workingOnly?$layout['sqlManualState']:base_sql_manual_state($layout,$draft);
  $operation=$_SESSION['baseRestoreOperation'][$scope]??null;
  if($undo&&(!$operation||$draft['revision']!==$operation['revision']||
     $undoToken!==$operation['token']||qs_stable_hash($current)!==$operation['restoredHash']))
@@ -12,10 +12,10 @@ function base_report_restore(array $layout,array $draft,array $current,bool $und
  $lock=fopen($path.'.lock','c');
  if(!$lock||!flock($lock,LOCK_EX))throw new RuntimeException('Cannot lock the report draft.');
  try{
-  $result=base_sql_manual_lock($layout,function()use($layout,$draft,$current,$undo,$operation,$sql,$path,$initialManual){
-   $latest=base_report_read_draft($layout);
+  $result=base_sql_manual_lock($layout,function()use($layout,$draft,$current,$undo,$operation,$sql,$path,$initialManual,$workingOnly){
+   $latest=$workingOnly?$draft:base_report_read_draft($layout);
    if($latest['revision']!==$draft['revision'])throw new RuntimeException('Another window saved this report. Reload before restoring.');
-   $manual=base_sql_manual_state($layout,$latest);
+   $manual=$workingOnly?$initialManual:base_sql_manual_state($layout,$latest);
    if($manual['overrides']!==$initialManual['overrides'])
     throw new RuntimeException('A manual SQL value changed in another window. Reload before restoring.');
    $next=$current;$working=$layout;
@@ -83,7 +83,7 @@ function base_report_restore(array $layout,array $draft,array $current,bool $und
    // keep their fresh values and their removed overrides stay removed.
    $undoFormulas=array_diff_key($current['formulas'],$affected);
    $token=!$undo&&$undoFormulas?bin2hex(random_bytes(16)):null;
-   $revision=$latest['revision']+1;
+   $revision=$latest['revision']+(int)!$workingOnly;
    $events=base_report_formula_events($layout,$revision,$current['formulas']+array_column($current['sqlReplacements'],'value','ref'),
     $next['formulas']+array_column($next['sqlReplacements'],'value','ref'),$undo?'Undo report restoration':'Restore report formulas and SQL values');
    $saved=array_replace($latest,[
@@ -100,8 +100,15 @@ function base_report_restore(array $layout,array $draft,array $current,bool $und
    if(!$undo)$response+=['sqlTargets'=>(object)$working['sqlManualTargets'],'configuredRows'=>$sql['configuredRows'],'coopSyncWarning'=>null];
    $json=json_encode($response,JSON_THROW_ON_ERROR);
    $recovery=$token===null?null:['token'=>$token,'formulas'=>$undoFormulas,'revision'=>$revision,'restoredHash'=>qs_stable_hash($next)];
-   atomic_file_write($path,json_bytes($saved));
-   return ['json'=>$json,'affected'=>$affected,'recovery'=>$recovery,'targets'=>$working['sqlManualTargets']??[]];
+   if(!$workingOnly)atomic_file_write($path,json_bytes($saved));
+   $state=monthly_snapshot_get_working($layout,$layout['monthlyWorkingId']??null);
+   $context=$state['context']??null;
+   if($context!==null){
+    $context=array_replace($context,['manual'=>$manual,'preview'=>$next['preview'],'total'=>$next['total']]);
+    if($sql!==null)$context=array_replace($context,['sqlTargets'=>$working['sqlManualTargets'],
+     'configuredRows'=>$sql['configuredRows'],'coopSyncWarning'=>null]);
+   }
+   return ['json'=>$json,'affected'=>$affected,'recovery'=>$recovery,'targets'=>$working['sqlManualTargets']??[],'context'=>$context,'workingRevision'=>$state['revision']??null,'formulas'=>$next['formulas'],'replacements'=>$next['sqlReplacements']];
   });
  }finally{flock($lock,LOCK_UN);fclose($lock);}
  if($sql!==null){
@@ -111,6 +118,14 @@ function base_report_restore(array $layout,array $draft,array $current,bool $und
  $_SESSION['baseSqlManualUndo'][$scope]=array_filter($_SESSION['baseSqlManualUndo'][$scope]??[],
   fn($entry)=>!isset($result['affected'][$entry['ref']]));
  unset($_SESSION['baseManualFormulaUndo'][$scope],$_SESSION['baseRestoredFormulaGrants'][$scope],$_SESSION['sqlRestoreGrants'][$scope]);
+ if($result['context']!==null)monthly_snapshot_update_working($layout,$result['workingRevision'],$result['context']);
+ if($workingOnly){
+  foreach($result['replacements'] as $record)$_SESSION['sqlReplacementGrants'][$record['signature']]=true;
+  foreach(array_diff_key($draft['sqlReplacements'],$result['replacements']) as $ref=>$record)
+   $_SESSION['sqlRestoreGrants'][$scope][$ref]=true;
+  foreach(array_keys($draft['formulas']+$result['formulas']) as $ref)
+   $_SESSION['baseRestoredFormulaGrants'][$scope][$ref]=$result['formulas'][$ref]??null;
+ }
  if($result['recovery']===null)unset($_SESSION['baseRestoreOperation'][$scope]);
  else $_SESSION['baseRestoreOperation'][$scope]=$result['recovery'];
  return $result['json'];
